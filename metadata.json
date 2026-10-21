@@ -1,0 +1,6 @@
+{
+  "name": "FormSaathi AI — Multilingual Form Automation & Document Assistant",
+  "description": "Intelligent form companion with profile vaults, multilingual explanations, voice assistance, smart autofill approvals, and integrated document compressor and converter.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -139,17 +139,17 @@ export const DocumentCompressor: React.FC<DocumentCompressorProps> = ({
     const lines =
       sampleType === 'bonafide'
         ? [
-            'This is to certify that Ms. Ananya Sharma, Daughter of Shri Suresh Kumar Sharma,',
+            'This is to certify that Mr. Anitesh Kumar Singh, Son of Shri Suresh Kumar Singh,',
             'is a bonafide student of this institution admitted in B.Tech Computer Science & Engg,',
             'for the academic session 2025-2029 under Student Enrollment Number 24ETBCS042.',
             'Her Institute AISHE Code is C-24901 and college is recognized by AICTE / UGC.',
             '',
-            'This certificate is issued on her request for the purpose of applying to the',
+            'This certificate is issued on his request for the purpose of applying to the',
             'National Scholarship Portal (NSP) Post-Matric Merit Scheme.',
           ]
         : [
             'This is to certify that after due inquiry by the Revenue Patwari and verification of records,',
-            'the total annual income of the family of Shri Suresh Kumar Sharma,',
+            'the total annual income of the family of Shri Suresh Kumar Singh,',
             'residing at House No. 42, Sector 14, Jaipur, District Jaipur, Rajasthan,',
             'from all verified agricultural, business and other sources is Rs. 2,40,000/-',
             '(Rupees Two Lakh Forty Thousand Only) per annum for the Financial Year 2025-26.',

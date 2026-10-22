@@ -228,14 +228,14 @@ function getFallbackScan(rawText?: string, targetCategory: string = 'Academic') 
   const text = rawText || '';
 
   const fields: any[] = [];
-  if (text.includes('Ananya Sharma') || targetCategory === 'Academic') {
+  if (text.includes('Anitesh') || text.includes('Ananya') || targetCategory === 'Academic') {
     fields.push(
-      { key: 'fullName', label: 'Student Full Name', value: 'Ananya Sharma', category: 'Personal', confidence: 0.98 },
+      { key: 'fullName', label: 'Student Full Name', value: 'Anitesh Kumar Singh', category: 'Personal', confidence: 0.98 },
       { key: 'dateOfBirth', label: 'Date of Birth', value: '2004-09-15', category: 'Personal', confidence: 0.95 },
-      { key: 'gender', label: 'Gender', value: 'Female', category: 'Personal', confidence: 0.95 },
-      { key: 'casteCategory', label: 'Caste Category', value: 'OBC (Non-Creamy Layer)', category: 'Personal', confidence: 0.9 },
-      { key: 'fatherName', label: "Father's Full Name", value: 'Suresh Kumar Sharma', category: 'Personal', confidence: 0.92 },
-      { key: 'email', label: 'Email Address', value: 'ananya.sharma2026@gmail.com', category: 'Contact & Address', confidence: 0.95 },
+      { key: 'gender', label: 'Gender', value: 'Male', category: 'Personal', confidence: 0.95 },
+      { key: 'casteCategory', label: 'Caste Category', value: 'General (UR)', category: 'Personal', confidence: 0.9 },
+      { key: 'fatherName', label: "Father's Full Name", value: 'Suresh Kumar Singh', category: 'Personal', confidence: 0.92 },
+      { key: 'email', label: 'Email Address', value: 'aniteshks21@gmail.com', category: 'Contact & Address', confidence: 0.95 },
       { key: 'phone', label: 'Mobile Number', value: '9876543210', category: 'Contact & Address', confidence: 0.92 },
       { key: 'address', label: 'Address', value: 'House No. 42, Sector 14, Jaipur, Rajasthan', category: 'Contact & Address', confidence: 0.88 },
       { key: 'tenthRollNo', label: '10th Roll Number', value: '14102984', category: 'Academic', confidence: 0.95 },

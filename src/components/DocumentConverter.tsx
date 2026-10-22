@@ -25,7 +25,7 @@ export const DocumentConverter: React.FC = () => {
   // Text to PDF state
   const [statementTitle, setStatementTitle] = useState('SELF DECLARATION / UNDERTAKING');
   const [statementBody, setStatementBody] = useState(
-    `I hereby declare that all information furnished in my application form is true, complete and correct to the best of my knowledge and belief. I understand that in the event of any information being found false or incorrect at any stage, my candidature / scholarship shall stand cancelled automatically.\n\nPlace: Jaipur, Rajasthan\nBeneficiary: Ananya Sharma`
+    `I hereby declare that all information furnished in my application form is true, complete and correct to the best of my knowledge and belief. I understand that in the event of any information being found false or incorrect at any stage, my candidature / scholarship shall stand cancelled automatically.\n\nPlace: Jaipur, Rajasthan\nBeneficiary: Anitesh Kumar Singh`
   );
 
   // Format flip state
@@ -63,7 +63,7 @@ export const DocumentConverter: React.FC = () => {
     setIsProcessing(true);
     setErrorMessage(null);
     try {
-      const res = await convertTextToPdf(statementTitle, statementBody, 'Ananya Sharma');
+      const res = await convertTextToPdf(statementTitle, statementBody, 'Anitesh Kumar Singh');
       setConversionResult(res);
     } catch (err: any) {
       setErrorMessage(err.message || 'Text to PDF conversion failed');

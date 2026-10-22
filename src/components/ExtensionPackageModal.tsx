@@ -223,15 +223,15 @@ export const ExtensionPackageModal: React.FC<ExtensionPackageModalProps> = ({ on
   // Fallback profile if storage empty
   function getDefaultProfile() {
     return {
-      fullName: "Ananya Sharma",
-      firstName: "Ananya",
-      lastName: "Sharma",
-      email: "ananya.sharma2026@gmail.com",
+      fullName: "Anitesh Kumar Singh",
+      firstName: "Anitesh",
+      lastName: "Singh",
+      email: "aniteshks21@gmail.com",
       phone: "9876543210",
       dateOfBirth: "2004-09-15",
-      gender: "Female",
-      fatherName: "Suresh Kumar Sharma",
-      motherName: "Sunita Sharma",
+      gender: "Male",
+      fatherName: "Suresh Kumar Singh",
+      motherName: "Sunita Singh",
       address: "House No. 42, Sector 14, Jaipur, Rajasthan",
       city: "Jaipur",
       state: "Rajasthan",
@@ -460,8 +460,8 @@ export const ExtensionPackageModal: React.FC<ExtensionPackageModalProps> = ({ on
     <div style="display: flex; align-items: center; gap: 4px;">
       <span style="color: var(--text-muted);">Vault:</span>
       <select id="profileSelect" class="select-input">
-        <option value="academic">Ananya Sharma (Academic)</option>
-        <option value="personal">Ananya Sharma (Personal)</option>
+        <option value="academic">Anitesh Kumar Singh (Academic)</option>
+        <option value="personal">Anitesh Kumar Singh (Personal)</option>
         <option value="job">Vikram Sharma (Job Applications)</option>
         <option value="family">Suresh Sharma (Family Welfare)</option>
       </select>
@@ -517,7 +517,7 @@ export const ExtensionPackageModal: React.FC<ExtensionPackageModalProps> = ({ on
   <div id="tab-vault" class="panel">
     <div class="card">
       <div class="card-title">
-        <span id="vaultProfileName">Ananya Sharma (Academic)</span>
+        <span id="vaultProfileName">Anitesh Kumar Singh (Academic)</span>
       </div>
       <div class="card-desc">Saved attributes ready for instant autofilling.</div>
       <div id="vaultFieldsList" style="max-height: 250px; overflow-y: auto;"></div>
@@ -597,16 +597,16 @@ export const ExtensionPackageModal: React.FC<ExtensionPackageModalProps> = ({ on
       content: `// FormSaathi AI Universal Extension Controller
 const PROFILES = {
   academic: {
-    name: "Ananya Sharma (Academic & Scholarship)",
+    name: "Anitesh Kumar Singh (Academic & Scholarship)",
     data: {
-      fullName: "Ananya Sharma",
+      fullName: "Anitesh Kumar Singh",
       dateOfBirth: "2004-09-15",
-      gender: "Female",
-      casteCategory: "OBC (Non-Creamy Layer)",
-      fatherName: "Suresh Kumar Sharma",
-      motherName: "Sunita Sharma",
+      gender: "Male",
+      casteCategory: "General (UR)",
+      fatherName: "Suresh Kumar Singh",
+      motherName: "Sunita Singh",
       annualIncome: "240000",
-      email: "ananya.sharma2026@gmail.com",
+      email: "aniteshks21@gmail.com",
       phone: "9876543210",
       address: "House No. 42, Sector 14, Jaipur, Rajasthan",
       city: "Jaipur",
@@ -625,14 +625,14 @@ const PROFILES = {
     }
   },
   personal: {
-    name: "Ananya Sharma (Personal Vault)",
+    name: "Anitesh Kumar Singh (Personal Vault)",
     data: {
-      fullName: "Ananya Sharma",
-      firstName: "Ananya",
-      lastName: "Sharma",
+      fullName: "Anitesh Kumar Singh",
+      firstName: "Anitesh",
+      lastName: "Singh",
       dateOfBirth: "2004-09-15",
-      gender: "Female",
-      email: "ananya.sharma2026@gmail.com",
+      gender: "Male",
+      email: "aniteshks21@gmail.com",
       phone: "9876543210",
       address: "House No. 42, Sector 14, Jaipur",
       state: "Rajasthan",

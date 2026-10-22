@@ -27,13 +27,13 @@ const SAMPLE_SLIPS = [
     title: 'Admission Registration Slip 2026',
     category: 'Academic',
     text: `STUDENT ADMISSION CONFIRMATION SLIP - 2026
-Student Full Name: Ananya Sharma
+Student Full Name: Anitesh Kumar Singh
 Date of Birth: 15/09/2004
-Gender: Female
-Father's Name: Suresh Kumar Sharma
-Mother's Name: Sunita Sharma
-Category: OBC (Non-Creamy Layer)
-Email: ananya.sharma2026@gmail.com
+Gender: Male
+Father's Name: Suresh Kumar Singh
+Mother's Name: Sunita Singh
+Category: General (UR)
+Email: aniteshks21@gmail.com
 Mobile: 9876543210
 Address: House No. 42, Sector 14, Jaipur, Rajasthan, 302022
 10th Board: CBSE | Roll No: 14102984 | Year: 2020 | Aggregate: 92.4%

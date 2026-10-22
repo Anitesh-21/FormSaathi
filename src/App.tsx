@@ -18,7 +18,15 @@ export default function App() {
   const [profiles, setProfiles] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem('formsaathi_profiles_vault');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Automatically upgrade if older cache was found
+        if (parsed.some((p: any) => p.name?.includes('Ananya') || p.fields?.some((f: any) => f.value === 'Ananya Sharma'))) {
+          localStorage.removeItem('formsaathi_profiles_vault');
+          return DEFAULT_PROFILES;
+        }
+        return parsed;
+      }
     } catch (e) {
       console.warn('Failed to load profiles from local storage');
     }

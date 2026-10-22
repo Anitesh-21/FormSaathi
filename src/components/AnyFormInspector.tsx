@@ -19,8 +19,11 @@ import {
   Check,
   Plus,
   X,
+  Power,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
-import { UserProfile, FormFieldDef, SupportedLanguage } from '../types';
+import { UserProfile, FormFieldDef, SupportedLanguage, ProfileField } from '../types';
 import { suggestAutofill, explainFormField } from '../services/api';
 
 interface AnyFormInspectorProps {
@@ -140,8 +143,9 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [autofilledFields, setAutofilledFields] = useState<Record<string, boolean>>({});
 
-  // Auto-add & profile sync state
-  const [autoAddToProfile, setAutoAddToProfile] = useState(true);
+  // Extension Power & Auto-add state
+  const [isExtensionActive, setIsExtensionActive] = useState<boolean>(true);
+  const [autoAddToProfile, setAutoAddToProfile] = useState<boolean>(true);
   const [fieldSyncStatus, setFieldSyncStatus] = useState<Record<string, 'added' | 'updated'>>({});
 
   // Active tooltip or helper modal for a single field
@@ -150,6 +154,27 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
   const [isLoadingTooltip, setIsLoadingTooltip] = useState(false);
   const [isAutofilling, setIsAutofilling] = useState(false);
   const [autofillToast, setAutofillToast] = useState<string | null>(null);
+
+  // Classify field into one of the 6 canonical profile vault domains
+  const determineStructuredCategory = (key: string, label: string): ProfileField['category'] => {
+    const text = `${key} ${label}`.toLowerCase();
+    if (/(tenth|twelfth|10th|12th|board|school|college|degree|btech|mtech|bca|mca|cgpa|gpa|percentage|marks|graduation|academic|university|roll_?no|stream|faculty|diploma|education)/i.test(text)) {
+      return 'Academic';
+    }
+    if (/(phone|mobile|cell|telephone|email|mail|address|street|city|state|pincode|postal|zip|district|residence|house|flat|location)/i.test(text)) {
+      return 'Contact & Address';
+    }
+    if (/(aadhaar|aadhar|uid|pan|passport|voter|epic|license|dl_no|ration|ssn|identity|citizenship|nationality|id_card)/i.test(text)) {
+      return 'Identity & Documents';
+    }
+    if (/(bank|ifsc|account|acc_no|micr|branch|salary|income|ctc|tax|gst|pan_card|upi|swift|remittance)/i.test(text)) {
+      return 'Financial & Bank';
+    }
+    if (/(company|employer|designation|role|title|experience|exp_years|notice|organization|work|occupation|profession)/i.test(text)) {
+      return 'Employment';
+    }
+    return 'Personal';
+  };
 
   // Helper to check if a form field is in active profile
   const findProfileField = (fieldId: string, fieldLabel: string) => {
@@ -165,12 +190,16 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
   const handleFieldChange = (fieldDef: FormFieldDef, value: string) => {
     setFieldValues((prev) => ({ ...prev, [fieldDef.id]: value }));
 
+    // If extension is toggled OFF, auto-learning is dormant
+    if (!isExtensionActive) return;
+
     if (autoAddToProfile && value.trim()) {
       const existing = findProfileField(fieldDef.id, fieldDef.label);
+      const structuredCat = determineStructuredCategory(fieldDef.id, fieldDef.label);
       if (!existing && onSaveOrUpdateFieldToProfile) {
-        onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, fieldDef.category as any);
+        onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, structuredCat);
         setFieldSyncStatus((prev) => ({ ...prev, [fieldDef.id]: 'added' }));
-        setAutofillToast(`✨ Auto-added "${fieldDef.label}" to profile "${activeProfile.name}"!`);
+        setAutofillToast(`✓ Learned [${structuredCat}] "${fieldDef.label}": "${value}" → Profile Vault Updated!`);
         setTimeout(() => setAutofillToast(null), 3500);
       }
     }
@@ -180,12 +209,13 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
     if (!value || !value.trim()) return;
     if (onSaveOrUpdateFieldToProfile) {
       const existing = findProfileField(fieldDef.id, fieldDef.label);
-      onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, fieldDef.category as any);
+      const structuredCat = determineStructuredCategory(fieldDef.id, fieldDef.label);
+      onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, structuredCat);
       setFieldSyncStatus((prev) => ({ ...prev, [fieldDef.id]: existing ? 'updated' : 'added' }));
       setAutofillToast(
         existing
-          ? `Updated "${fieldDef.label}" in profile "${activeProfile.name}"!`
-          : `Added "${fieldDef.label}" to profile "${activeProfile.name}"!`
+          ? `✓ Updated [${structuredCat}] "${fieldDef.label}" in profile "${activeProfile.name}"!`
+          : `✓ Learned & Saved [${structuredCat}] "${fieldDef.label}" to profile "${activeProfile.name}"!`
       );
       setTimeout(() => setAutofillToast(null), 3500);
     }
@@ -198,17 +228,18 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
       if (val && val.trim()) {
         const existing = findProfileField(f.id, f.label);
         if (!existing && onSaveOrUpdateFieldToProfile) {
-          onSaveOrUpdateFieldToProfile(f.id, f.label, val, f.category as any);
+          const structuredCat = determineStructuredCategory(f.id, f.label);
+          onSaveOrUpdateFieldToProfile(f.id, f.label, val, structuredCat);
           setFieldSyncStatus((prev) => ({ ...prev, [f.id]: 'added' }));
           count++;
         }
       }
     });
     if (count > 0) {
-      setAutofillToast(`✨ Saved ${count} new field(s) to profile "${activeProfile.name}"!`);
+      setAutofillToast(`✨ Structured & Saved ${count} new field(s) into profile "${activeProfile.name}"!`);
       setTimeout(() => setAutofillToast(null), 3500);
     } else {
-      setAutofillToast('All entered fields are already in your profile.');
+      setAutofillToast('All entered fields are already structured in your profile.');
       setTimeout(() => setAutofillToast(null), 3000);
     }
   };
@@ -415,6 +446,11 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
 
   // Run Extension Autofill across ANY form
   const handleRunExtensionAutofill = async () => {
+    if (!isExtensionActive) {
+      setAutofillToast('⚠️ FormSaathi Extension is currently Paused (OFF). Click "Turn Extension ON" to autofill.');
+      setTimeout(() => setAutofillToast(null), 3500);
+      return;
+    }
     setIsAutofilling(true);
     try {
       const profileData: Record<string, string> = {};
@@ -533,12 +569,31 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
             </p>
           </div>
 
-          {/* Quick Extension Floating Button Indicator */}
-          <div className="flex items-center gap-2">
+          {/* Quick Extension Floating Button Indicator & Power Switch */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsExtensionActive(!isExtensionActive)}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+                isExtensionActive
+                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300'
+              }`}
+              title={`Click to turn extension ${isExtensionActive ? 'OFF (Pause)' : 'ON (Active)'}`}
+            >
+              <Power className={`w-3.5 h-3.5 ${isExtensionActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+              <span>Extension: {isExtensionActive ? 'ON' : 'OFF'}</span>
+              <span className={`w-2 h-2 rounded-full ${isExtensionActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+            </button>
+
             <button
               onClick={handleRunExtensionAutofill}
               disabled={isAutofilling}
-              className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer hover:scale-102 disabled:opacity-60"
+              className={`px-4 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer ${
+                isExtensionActive
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 hover:scale-102'
+                  : 'bg-slate-400 cursor-not-allowed opacity-75'
+              } disabled:opacity-60`}
             >
               {isAutofilling ? (
                 <>
@@ -659,21 +714,45 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
             <span className="truncate">{currentDomain}</span>
           </div>
 
-          {/* Extension Icon in Browser Bar */}
+          {/* Extension Icon & Power Toggle in Browser Bar */}
           <div className="flex items-center gap-2">
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-700 text-xs font-bold shadow-2xs"
-              title="FormSaathi Extension Active in this Tab"
+            <button
+              type="button"
+              onClick={() => setIsExtensionActive(!isExtensionActive)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer ${
+                isExtensionActive
+                  ? 'bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+                  : 'bg-slate-200 border border-slate-300 text-slate-600 hover:bg-slate-300'
+              }`}
+              title={`Click to turn extension ${isExtensionActive ? 'OFF (Pause)' : 'ON (Active)'}`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="hidden sm:inline">FormSaathi Active</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            </div>
+              <Power className={`w-3 h-3 ${isExtensionActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+              <span className="hidden sm:inline">FormSaathi {isExtensionActive ? 'ON' : 'OFF'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isExtensionActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            </button>
           </div>
         </div>
 
         {/* Webpage Content */}
         <div className="p-6 sm:p-8 space-y-6">
+          {/* Extension Paused Alert Banner */}
+          {!isExtensionActive && (
+            <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-xs animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span>
+                  <strong>FormSaathi Extension is Paused.</strong> In-page badges, auto-learning, and one-click autofill are dormant.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsExtensionActive(true)}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-colors shadow-2xs"
+              >
+                Turn ON
+              </button>
+            </div>
+          )}
           <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-slate-900">{currentTitle}</h2>
@@ -849,13 +928,22 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                       {/* Injected FormSaathi Extension Sparkle Icon inside the input */}
                       <button
                         type="button"
-                        onClick={() => handleInspectField(field)}
+                        onClick={() => {
+                          if (!isExtensionActive) {
+                            setAutofillToast('⚠️ Extension is Paused. Turn it ON using the toggle switch to inspect and autofill fields.');
+                            setTimeout(() => setAutofillToast(null), 3000);
+                            return;
+                          }
+                          handleInspectField(field);
+                        }}
                         className={`absolute right-2 top-2 p-1 rounded-md transition-all ${
-                          isInspectingThis
+                          !isExtensionActive
+                            ? 'opacity-35 grayscale cursor-not-allowed text-slate-400 bg-slate-100 border border-slate-200'
+                            : isInspectingThis
                             ? 'bg-indigo-600 text-white shadow-2xs'
                             : 'text-indigo-600 hover:bg-indigo-50 bg-white border border-indigo-100 shadow-2xs'
                         }`}
-                        title="FormSaathi AI: Explain or Fill this field"
+                        title={isExtensionActive ? "FormSaathi AI: Explain or Fill this field" : "Extension is Paused"}
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                       </button>

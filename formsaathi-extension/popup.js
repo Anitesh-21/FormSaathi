@@ -82,6 +82,89 @@ let currentFilter = "all";
 let detectedFieldsCache = [];
 let editingFieldKey = null; // Key of field currently being edited inline
 let lastAssistantAnswerText = "";
+let extensionEnabled = true; // Master Extension ON / OFF toggle
+let currentVaultCategoryFilter = "ALL"; // Category filter for profile vault
+
+// Intelligent Field Categorization & Structuring Engine
+function determineFieldCategory(key, val = "") {
+  const norm = (String(key) + " " + String(val)).toLowerCase().replace(/[^a-z0-9]/g, " ");
+
+  if (/\b(phone|mobile|tel|cell|whatsapp|email|mail|address|street|house|city|district|state|pin|pincode|zip|postal|residence|domicile\s*state|emergency)\b/.test(norm)) {
+    return "Contact & Address";
+  }
+  if (/\b(10th|12th|matric|inter|roll|board|percent|marks|cgpa|course|degree|college|university|institute|school|qualification|passing|graduation)\b/.test(norm)) {
+    return "Academic";
+  }
+  if (/\b(aadhaar|aadhar|uid|pan|passport|license|dl|voter|epic|ration|khasra|certificate\s*no|id\s*number)\b/.test(norm)) {
+    return "Identity & Documents";
+  }
+  if (/\b(bank|account|acc\s*no|ifsc|branch|income|salary|tax|upi|refund)\b/.test(norm)) {
+    return "Financial & Bank";
+  }
+  if (/\b(experience|designation|current\s*role|company|employer|job|work|organization|notice|ctc|resume|linkedin)\b/.test(norm)) {
+    return "Employment";
+  }
+  return "Personal";
+}
+
+function structureLearnedField(rawKey, rawLabel, rawValue, explicitCategory = "AUTO") {
+  const value = String(rawValue || "").trim();
+  const label = (rawLabel || rawKey || "Detail").replace(/[:*]+$/, "").trim();
+  const norm = (label + " " + (rawKey || "")).toLowerCase().replace(/[^a-z0-9]/g, " ");
+
+  const category = (explicitCategory && explicitCategory !== "AUTO")
+    ? explicitCategory
+    : determineFieldCategory(label, rawKey);
+
+  let cleanKey = "";
+  if (/\b(phone|mobile|cell|contact)\b/.test(norm)) cleanKey = norm.includes("alt") ? "alternateMobile" : "phone";
+  else if (/\b(email|mail)\b/.test(norm)) cleanKey = "email";
+  else if (/\b(address|street)\b/.test(norm)) cleanKey = norm.includes("permanent") ? "permanentAddress" : "address";
+  else if (/\b(city\s*&?\s*state|city_state)\b/.test(norm)) cleanKey = "cityState";
+  else if (/\b(city|district)\b/.test(norm)) cleanKey = "city";
+  else if (/\b(state)\b/.test(norm)) cleanKey = "state";
+  else if (/\b(pin|pincode|zip)\b/.test(norm)) cleanKey = "pinCode";
+  else if (/\b(10th\s*roll|matric\s*roll)\b/.test(norm)) cleanKey = "tenthRollNo";
+  else if (/\b(10th\s*percent|matric\s*percent)\b/.test(norm)) cleanKey = "tenthPercentage";
+  else if (/\b(10th\s*board|matric\s*board)\b/.test(norm)) cleanKey = "tenthBoard";
+  else if (/\b(12th\s*roll|inter\s*roll)\b/.test(norm)) cleanKey = "twelfthRollNo";
+  else if (/\b(12th\s*percent|inter\s*percent)\b/.test(norm)) cleanKey = "twelfthPercentage";
+  else if (/\b(12th\s*board|inter\s*board)\b/.test(norm)) cleanKey = "twelfthBoard";
+  else if (/\b(course|degree|qualification)\b/.test(norm)) cleanKey = "currentCourse";
+  else if (/\b(college|university|institute)\b/.test(norm)) cleanKey = "universityName";
+  else if (/\b(graduation\s*year|passing\s*year)\b/.test(norm)) cleanKey = "graduationYear";
+  else if (/\b(roll\s*no|prn|enrollment)\b/.test(norm)) cleanKey = "rollNo";
+  else if (/\b(aadhaar|aadhar)\b/.test(norm)) cleanKey = "aadhaarNumber";
+  else if (/\b(pan)\b/.test(norm)) cleanKey = "panNumber";
+  else if (/\b(passport)\b/.test(norm)) cleanKey = "passportNumber";
+  else if (/\b(license|dl)\b/.test(norm)) cleanKey = "drivingLicenseNo";
+  else if (/\b(voter|epic)\b/.test(norm)) cleanKey = "voterId";
+  else if (/\b(bank\s*account|account\s*no)\b/.test(norm)) cleanKey = "bankAccountNumber";
+  else if (/\b(ifsc)\b/.test(norm)) cleanKey = "ifscCode";
+  else if (/\b(bank\s*name)\b/.test(norm)) cleanKey = "bankName";
+  else if (/\b(income)\b/.test(norm)) cleanKey = "annualIncome";
+  else if (/\b(experience|years)\b/.test(norm)) cleanKey = "experienceYears";
+  else if (/\b(designation|role|title)\b/.test(norm)) cleanKey = "currentRole";
+  else if (/\b(company|employer)\b/.test(norm)) cleanKey = "currentCompany";
+  else if (/\b(dob|birth)\b/.test(norm)) cleanKey = "dateOfBirth";
+  else if (/\b(gender|sex)\b/.test(norm)) cleanKey = "gender";
+  else if (/\b(father)\b/.test(norm)) cleanKey = "fatherName";
+  else if (/\b(mother)\b/.test(norm)) cleanKey = "motherName";
+  else if (/\b(caste|category)\b/.test(norm)) cleanKey = "casteCategory";
+  else if (/\b(blood)\b/.test(norm)) cleanKey = "bloodGroup";
+  else if (/\b(name)\b/.test(norm) && !norm.includes("father") && !norm.includes("mother")) cleanKey = "fullName";
+  else {
+    cleanKey = label
+      .toLowerCase()
+      .replace(/[^a-zA-Z0-9\s]/g, "")
+      .split(/\s+/)
+      .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
+      .join("");
+    if (!cleanKey) cleanKey = "field_" + Date.now();
+  }
+
+  return { key: cleanKey, label, value, category };
+}
 
 // Semantic Synonym Clusters for fuzzy similarity matching
 const SYNONYM_CLUSTERS = [
@@ -400,12 +483,85 @@ function showExtensionToast(msg, isSuccess = true) {
   }, 3200);
 }
 
+// Master Extension Power Toggle Controller
+function initExtensionPowerToggle() {
+  const toggle = document.getElementById("extensionPowerToggle");
+  toggle?.addEventListener("change", (e) => {
+    const isEnabled = e.target.checked;
+    extensionEnabled = isEnabled;
+    updateExtensionPowerUI(isEnabled);
+
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ formsaathi_extension_enabled: isEnabled }, () => {
+        // Send state to active tab
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              action: "SET_EXTENSION_POWER",
+              enabled: isEnabled
+            }, () => {});
+          }
+        });
+      });
+    }
+
+    showExtensionToast(
+      isEnabled
+        ? "✓ Extension ON: FormSaathi active in web pages"
+        : "⏸️ Extension OFF: Floating assistant & autofill paused"
+    );
+  });
+}
+
+function updateExtensionPowerUI(enabled) {
+  const toggle = document.getElementById("extensionPowerToggle");
+  if (toggle) toggle.checked = enabled;
+
+  const label = document.getElementById("powerToggleText");
+  if (label) {
+    label.textContent = enabled ? "ON" : "OFF";
+    label.className = "power-label" + (enabled ? "" : " off");
+  }
+
+  const dot = document.getElementById("headerStatusDot");
+  if (dot) {
+    dot.className = "status-dot" + (enabled ? "" : " off");
+  }
+
+  const statusText = document.getElementById("headerStatusText");
+  if (statusText) {
+    statusText.textContent = enabled ? "Active in Tab" : "Extension OFF";
+    statusText.style.color = enabled ? "#34d399" : "#94a3b8";
+  }
+
+  const banner = document.getElementById("extensionDisabledAlertBanner");
+  if (banner) {
+    banner.style.display = enabled ? "none" : "block";
+  }
+
+  const autofillBtn = document.getElementById("autofillCurrentTabBtn");
+  if (autofillBtn) {
+    if (!enabled) {
+      autofillBtn.style.opacity = "0.5";
+      autofillBtn.title = "Extension is turned OFF. Toggle ON to autofill.";
+    } else {
+      autofillBtn.style.opacity = "1";
+      autofillBtn.title = "";
+    }
+  }
+}
+
 // Storage helpers
 function loadProfilesFromStorage(callback) {
   if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
     chrome.storage.local.get(
-      ["formsaathi_custom_profiles", "formsaathi_active_profile_key", "formsaathi_auto_add"],
+      ["formsaathi_custom_profiles", "formsaathi_active_profile_key", "formsaathi_auto_add", "formsaathi_extension_enabled"],
       (res) => {
+        if (typeof res.formsaathi_extension_enabled !== "undefined") {
+          extensionEnabled = !!res.formsaathi_extension_enabled;
+        }
+        updateExtensionPowerUI(extensionEnabled);
+
         if (res.formsaathi_custom_profiles) {
           Object.keys(res.formsaathi_custom_profiles).forEach((k) => {
             if (PROFILES[k]) {
@@ -430,6 +586,7 @@ function loadProfilesFromStorage(callback) {
       }
     );
   } else {
+    updateExtensionPowerUI(extensionEnabled);
     if (callback) callback();
   }
 }
@@ -441,7 +598,9 @@ function persistProfilesAndActive() {
       formsaathi_custom_profiles: PROFILES,
       formsaathi_active_profile_data: prof.data,
       formsaathi_active_profile_name: prof.name,
-      formsaathi_active_profile_key: currentProfileKey
+      formsaathi_active_profile_key: currentProfileKey,
+      formsaathi_extension_enabled: extensionEnabled,
+      formsaathi_last_updated: Date.now()
     });
   }
   updateProfileUIElements();
@@ -492,6 +651,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLanguage();
   initFilters();
   initAutoAddToggle();
+  initExtensionPowerToggle();
   initProfileAddForm();
   initCreateNewProfileFeature();
   initProfileSearch();
@@ -505,6 +665,18 @@ document.addEventListener("DOMContentLoaded", () => {
     initConverter();
     initOcr();
   });
+
+  // Listen for real-time field learn events from active page
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((req) => {
+      if (req.action === "FIELD_LEARNED_UPDATED" || req.action === "PROFILE_UPDATED") {
+        loadProfilesFromStorage(() => {
+          renderVaultList();
+          scanCurrentTab();
+        });
+      }
+    });
+  }
 });
 
 // Tab Navigation
@@ -737,14 +909,16 @@ function initProfileAddForm() {
   saveBtn.addEventListener("click", () => {
     const rawKey = keyInput.value.trim();
     const val = valInput.value.trim();
+    const catChoice = document.getElementById("newFieldCategorySelect")?.value || "AUTO";
 
     if (!rawKey) {
       alert("Please enter a field label or key.");
       return;
     }
 
-    const fieldKey = rawKey.includes(" ") ? rawKey : (rawKey.charAt(0).toLowerCase() + rawKey.slice(1));
-    PROFILES[currentProfileKey].data[fieldKey] = val;
+    const structured = structureLearnedField(rawKey, rawKey, val, catChoice);
+    PROFILES[currentProfileKey].data[structured.key] = structured.value;
+    PROFILES[currentProfileKey].data[structured.label] = structured.value;
 
     persistProfilesAndActive();
     renderVaultList();
@@ -753,7 +927,7 @@ function initProfileAddForm() {
     box.style.display = "none";
     keyInput.value = "";
     valInput.value = "";
-    showExtensionToast(`✓ Added "${rawKey}" to Profile!`);
+    showExtensionToast(`✓ Learned & Structured [${structured.category}] ${structured.label}: "${structured.value}" → Vault Updated!`);
   });
 
   document.querySelectorAll(".chip-preset").forEach((chip) => {
@@ -764,6 +938,12 @@ function initProfileAddForm() {
       box.style.display = "block";
       keyInput.value = label;
       valInput.value = defaultVal;
+
+      const catSelect = document.getElementById("newFieldCategorySelect");
+      if (catSelect) {
+        catSelect.value = determineFieldCategory(label, defaultVal);
+      }
+
       valInput.focus();
       showExtensionToast(`Selected preset: ${label}`);
     });
@@ -776,33 +956,90 @@ function initProfileSearch() {
   searchInput.addEventListener("input", (e) => {
     renderVaultList(e.target.value.trim().toLowerCase());
   });
+
+  // Category filter chips in vault
+  document.querySelectorAll("#vaultCategoryFilterBar .filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#vaultCategoryFilterBar .filter-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentVaultCategoryFilter = btn.dataset.cat || "ALL";
+      renderVaultList(searchInput.value.trim().toLowerCase());
+    });
+  });
 }
 
-// Render Profile Fields with Inline Edit and Delete
+// Render Profile Fields with Structure Categories, Filter Chips, and Inline Edit
 function renderVaultList(filterTerm = "") {
   const container = document.getElementById("vaultFieldsList");
   const data = PROFILES[currentProfileKey]?.data || {};
   container.innerHTML = "";
 
-  const entries = Object.entries(data).filter(([k, v]) => {
-    if (!filterTerm) return true;
-    return k.toLowerCase().includes(filterTerm) || String(v).toLowerCase().includes(filterTerm);
+  // Group entries and avoid duplicate raw label and camelCase rendering if identical value
+  const seenValues = new Map();
+  const allEntries = [];
+
+  Object.entries(data).forEach(([k, v]) => {
+    const cat = determineFieldCategory(k, v);
+    allEntries.push({ key: k, value: v, category: cat });
   });
 
-  if (entries.length === 0) {
-    container.innerHTML = `<div style="color: #64748b; font-size: 11px; text-align: center; padding: 15px 0;">${filterTerm ? 'No matching fields found.' : 'No attributes in this profile yet. Click "+ Add Field" to create one.'}</div>`;
+  // Update Category Counts
+  const catCounts = {
+    ALL: allEntries.length,
+    "Personal": 0,
+    "Contact & Address": 0,
+    "Academic": 0,
+    "Identity & Documents": 0,
+    "Financial & Bank": 0,
+    "Employment": 0
+  };
+
+  allEntries.forEach((item) => {
+    if (catCounts[item.category] !== undefined) {
+      catCounts[item.category]++;
+    }
+  });
+
+  const catAllSpan = document.getElementById("catCountAll");
+  if (catAllSpan) catAllSpan.textContent = String(catCounts.ALL);
+
+  // Apply filters
+  const filtered = allEntries.filter((item) => {
+    if (currentVaultCategoryFilter !== "ALL" && item.category !== currentVaultCategoryFilter) {
+      return false;
+    }
+    if (!filterTerm) return true;
+    return (
+      item.key.toLowerCase().includes(filterTerm) ||
+      String(item.value).toLowerCase().includes(filterTerm) ||
+      item.category.toLowerCase().includes(filterTerm)
+    );
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="color: #64748b; font-size: 11px; text-align: center; padding: 15px 0;">${filterTerm || currentVaultCategoryFilter !== "ALL" ? 'No attributes match the selected filter.' : 'No attributes in this profile yet. Click "+ Add Field" to create one.'}</div>`;
     return;
   }
 
-  entries.forEach(([k, v]) => {
+  filtered.forEach(({ key: k, value: v, category: cat }) => {
     const row = document.createElement("div");
     row.className = "field-row";
     row.dataset.key = k;
 
+    let catClass = "cat-personal";
+    if (cat === "Contact & Address") catClass = "cat-contact";
+    else if (cat === "Academic") catClass = "cat-academic";
+    else if (cat === "Identity & Documents") catClass = "cat-identity";
+    else if (cat === "Financial & Bank") catClass = "cat-financial";
+    else if (cat === "Employment") catClass = "cat-employment";
+
     if (editingFieldKey === k) {
       row.innerHTML = `
         <div style="flex: 1; margin-right: 6px;">
-          <span class="field-key" style="margin-bottom: 2px;">${k}</span>
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+            <span class="field-key">${k}</span>
+            <span class="field-category-pill ${catClass}">${cat}</span>
+          </div>
           <input type="text" class="inline-edit-input" id="editInput_${k}" value="${String(v).replace(/"/g, '&quot;')}" />
         </div>
         <div class="field-actions">
@@ -829,7 +1066,10 @@ function renderVaultList(filterTerm = "") {
     } else {
       row.innerHTML = `
         <div class="field-info">
-          <span class="field-key">${k}</span>
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+            <span class="field-key">${k}</span>
+            <span class="field-category-pill ${catClass}">${cat}</span>
+          </div>
           <span class="field-val" title="${v}">${v || '<span style="color:#94a3b8; font-style:italic;">(empty)</span>'}</span>
         </div>
         <div class="field-actions">
@@ -1032,11 +1272,14 @@ function renderDetectedFields() {
       const val = e.currentTarget.dataset.val.trim();
       if (!val) return;
 
-      PROFILES[currentProfileKey].data[label] = val;
+      const structured = structureLearnedField(label, label, val);
+      PROFILES[currentProfileKey].data[structured.key] = structured.value;
+      PROFILES[currentProfileKey].data[structured.label] = structured.value;
+
       persistProfilesAndActive();
       renderVaultList();
       scanCurrentTab();
-      showExtensionToast(`✓ Saved "${label}: ${val}" to Profile!`);
+      showExtensionToast(`✓ Learned & Structured [${structured.category}] ${structured.label}: "${structured.value}" → Vault Updated!`);
     });
 
     // Update Profile button
@@ -1068,13 +1311,17 @@ document.getElementById("rescanPageBtn")?.addEventListener("click", () => {
   showExtensionToast("Re-scanning active webpage...");
 });
 
-// Sync all newly entered values from page to Profile
+// Sync all newly entered values from page to Profile with Structured Categorization
 document.getElementById("syncAllNewToProfileBtn")?.addEventListener("click", () => {
   let savedCount = 0;
+  const learnedCats = new Set();
+
   detectedFieldsCache.forEach((f) => {
     if (!f.match.isMatched && f.hasValue && f.currentValue.trim()) {
-      const cleanKey = f.label.replace(/\*$/, "").trim();
-      PROFILES[currentProfileKey].data[cleanKey] = f.currentValue.trim();
+      const structured = structureLearnedField(f.name || f.id, f.label, f.currentValue.trim());
+      PROFILES[currentProfileKey].data[structured.key] = structured.value;
+      PROFILES[currentProfileKey].data[structured.label] = structured.value;
+      learnedCats.add(structured.category);
       savedCount++;
     }
   });
@@ -1083,7 +1330,7 @@ document.getElementById("syncAllNewToProfileBtn")?.addEventListener("click", () 
     persistProfilesAndActive();
     renderVaultList();
     scanCurrentTab();
-    showExtensionToast(`✓ Saved ${savedCount} new form field(s) to Profile!`);
+    showExtensionToast(`✓ Learned & Structured ${savedCount} new field(s) across [${Array.from(learnedCats).join(', ')}] → Vault Updated!`);
   } else {
     showExtensionToast("No unmapped fields with entered values found to save.", false);
   }
@@ -1091,6 +1338,11 @@ document.getElementById("syncAllNewToProfileBtn")?.addEventListener("click", () 
 
 // Autofill Entire Form on Active Tab
 document.getElementById("autofillCurrentTabBtn")?.addEventListener("click", () => {
+  if (!extensionEnabled) {
+    showExtensionToast("⏸️ Extension is turned OFF. Toggle ON switch at top-right to autofill.", false);
+    return;
+  }
+
   const prof = PROFILES[currentProfileKey];
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs || !tabs[0]) return;
@@ -2564,7 +2816,9 @@ Status: Verified & Acknowledged`;
         const input = document.querySelector(`.ocr-val-input[data-idx="${idx}"]`);
         const val = input ? input.value.trim() : f.value;
         if (f && val) {
-          PROFILES[currentProfileKey].data[f.key] = val;
+          const structured = structureLearnedField(f.key, f.label, val, f.category);
+          PROFILES[currentProfileKey].data[structured.key] = structured.value;
+          PROFILES[currentProfileKey].data[structured.label] = structured.value;
           savedCount++;
         }
       }

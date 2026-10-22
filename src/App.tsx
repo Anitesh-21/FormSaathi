@@ -164,33 +164,66 @@ export default function App() {
   ) => {
     if (!value || !value.trim()) return;
     const targetId = profileId || activeProfileId;
+
+    // Structure category if not explicitly provided or generic
+    const inferCategory = (k: string, l: string): ProfileField['category'] => {
+      const text = `${k} ${l}`.toLowerCase();
+      if (/(tenth|twelfth|10th|12th|board|school|college|degree|btech|mtech|bca|mca|cgpa|gpa|percentage|marks|graduation|academic|university|roll_?no|stream|faculty|diploma|education)/i.test(text)) {
+        return 'Academic';
+      }
+      if (/(phone|mobile|cell|telephone|email|mail|address|street|city|state|pincode|postal|zip|district|residence|house|flat|location)/i.test(text)) {
+        return 'Contact & Address';
+      }
+      if (/(aadhaar|aadhar|uid|pan|passport|voter|epic|license|dl_no|ration|ssn|identity|citizenship|nationality|id_card)/i.test(text)) {
+        return 'Identity & Documents';
+      }
+      if (/(bank|ifsc|account|acc_no|micr|branch|salary|income|ctc|tax|gst|pan_card|upi|swift|remittance)/i.test(text)) {
+        return 'Financial & Bank';
+      }
+      if (/(company|employer|designation|role|title|experience|exp_years|notice|organization|work|occupation|profession)/i.test(text)) {
+        return 'Employment';
+      }
+      return 'Personal';
+    };
+
+    const finalCategory: ProfileField['category'] =
+      category && ['Personal', 'Academic', 'Contact & Address', 'Identity & Documents', 'Financial & Bank', 'Employment'].includes(category)
+        ? category
+        : inferCategory(fieldKey, fieldLabel);
+
+    // Format clean camelCase or snake_case key
+    const cleanKey = fieldKey
+      ? fieldKey.toLowerCase().replace(/[^a-z0-9_]/g, '_')
+      : fieldLabel.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
     setProfiles((prev) =>
       prev.map((p) => {
         if (p.id !== targetId) return p;
-        const cleanKey = fieldKey.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanLabel = fieldLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normalizedTargetKey = cleanKey.replace(/[^a-z0-9]/g, '');
+        const normalizedTargetLabel = fieldLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
 
         const existingIndex = p.fields.findIndex((f) => {
           const k = f.key.toLowerCase().replace(/[^a-z0-9]/g, '');
           const l = f.label.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return k === cleanKey || l === cleanLabel || (cleanKey.length > 3 && k === cleanKey);
+          return k === normalizedTargetKey || l === normalizedTargetLabel || (normalizedTargetKey.length > 3 && k === normalizedTargetKey);
         });
 
         let updatedFields = [...p.fields];
         if (existingIndex >= 0) {
-          // Update existing field
+          // Update existing field and refresh category if needed
           updatedFields[existingIndex] = {
             ...updatedFields[existingIndex],
             value: value.trim(),
+            category: finalCategory,
           };
         } else {
-          // Add new field to profile
+          // Add new structured field to profile
           updatedFields.push({
             id: `field-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            key: fieldKey || fieldLabel.toLowerCase().replace(/[^a-zA-Z0-9]/g, ''),
+            key: cleanKey,
             label: fieldLabel,
             value: value.trim(),
-            category: category || 'Personal',
+            category: finalCategory,
           });
         }
 

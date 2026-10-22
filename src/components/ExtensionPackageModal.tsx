@@ -127,10 +127,10 @@ export const ExtensionPackageModal: React.FC<ExtensionPackageModalProps> = ({ on
           <div>
             <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>All 7 Core Features Packaged into the Extension:</span>
+              <span>Full Browser Extension with Master Power Toggle & Structured Auto-Learn:</span>
             </div>
             <p className="text-[11px] text-slate-600 mt-0.5">
-              Universal Autofill • Profile Vaults • Multi-Language Voice • In-Page Floating Assistant • Document Compressor • Format Converter • OCR Scanner
+              Master ON/OFF Switch • Structured Field Auto-Learn (Personal, Contact, Academic, ID, Financial, Work) • Live Vault Update • Universal Autofill • Voice Guidance • Compressor & Converter
             </p>
           </div>
 

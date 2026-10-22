@@ -4,14 +4,40 @@
 
   let activeProfileCache = null;
   let autoAddDebounceTimers = new WeakMap();
+  let extensionEnabled = true;
 
-  // Load and cache active profile from storage
+  // Apply or update extension master ON/OFF state on the active page
+  function applyExtensionState(enabled) {
+    extensionEnabled = enabled;
+    document.body.classList.toggle("formsaathi-disabled", !enabled);
+    const dock = document.getElementById("formsaathi-floating-dock");
+    if (dock) {
+      dock.classList.toggle("formsaathi-dock-hidden", !enabled);
+      dock.style.display = enabled ? "flex" : "none";
+    }
+    document.querySelectorAll(".formsaathi-field-badge").forEach((badge) => {
+      badge.classList.toggle("formsaathi-badge-disabled", !enabled);
+      badge.style.display = enabled ? "" : "none";
+    });
+  }
+
+  // Load and cache active profile & master toggle from storage
   function refreshActiveProfile(callback) {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(
-        ["formsaathi_active_profile_data", "formsaathi_active_profile_name", "formsaathi_auto_add", "formsaathi_custom_profiles", "formsaathi_active_profile_key"],
+        [
+          "formsaathi_active_profile_data",
+          "formsaathi_active_profile_name",
+          "formsaathi_auto_add",
+          "formsaathi_custom_profiles",
+          "formsaathi_active_profile_key",
+          "formsaathi_extension_enabled"
+        ],
         (res) => {
           activeProfileCache = res.formsaathi_active_profile_data || getDefaultProfile();
+          if (typeof res.formsaathi_extension_enabled !== "undefined") {
+            applyExtensionState(!!res.formsaathi_extension_enabled);
+          }
           if (callback) callback(res);
         }
       );
@@ -33,7 +59,16 @@
       <span style="font-size: 12px; font-weight: 700; letter-spacing: -0.2px;">✨ FormSaathi Autofill</span>
     `;
 
+    if (!extensionEnabled) {
+      dock.style.display = "none";
+      dock.classList.add("formsaathi-dock-hidden");
+    }
+
     dock.addEventListener("click", () => {
+      if (!extensionEnabled) {
+        showToast("⏸️ FormSaathi Extension is currently turned OFF. Toggle ON in popup to use.");
+        return;
+      }
       refreshActiveProfile((res) => {
         const profile = res.formsaathi_active_profile_data || getDefaultProfile();
         const profName = res.formsaathi_active_profile_name || "Profile";
@@ -210,10 +245,187 @@
     return null;
   }
 
-  // 3. Auto-add new form values to active profile when user enters them
+  // 3. Intelligent Field Structuring Engine
+  function structureLearnedField(rawKey, rawLabel, rawValue, inputType = "text") {
+    const value = String(rawValue || "").trim();
+    const label = (rawLabel || rawKey || "Field Detail").replace(/[:*]+$/, "").trim();
+    const norm = (label + " " + (rawKey || "")).toLowerCase().replace(/[^a-z0-9]/g, " ");
+
+    let category = "Personal";
+    let cleanKey = "";
+
+    // 1. Contact & Address
+    if (/\b(mobile|telephone|phone|tel|cell|whatsapp|contact\s*no)\b/.test(norm) || inputType === "tel") {
+      category = "Contact & Address";
+      cleanKey = norm.includes("alt") || norm.includes("second") ? "alternateMobile" : "phone";
+    } else if (/\b(email|mail)\b/.test(norm) || inputType === "email") {
+      category = "Contact & Address";
+      cleanKey = "email";
+    } else if (/\b(address|street|house|flat|road|colony|residence|residential)\b/.test(norm) || inputType === "textarea") {
+      category = "Contact & Address";
+      cleanKey = norm.includes("permanent") ? "permanentAddress" : "address";
+    } else if (/\b(city\s*&?\s*state|city_state|current_city)\b/.test(norm)) {
+      category = "Contact & Address";
+      cleanKey = "cityState";
+    } else if (/\b(city|district|town)\b/.test(norm)) {
+      category = "Contact & Address";
+      cleanKey = "city";
+    } else if (/\b(state|province|domicile\s*state)\b/.test(norm)) {
+      category = "Contact & Address";
+      cleanKey = "state";
+    } else if (/\b(pin|pincode|zip|postal)\b/.test(norm)) {
+      category = "Contact & Address";
+      cleanKey = "pinCode";
+    } else if (/\b(emergency|relative|guardian\s*phone)\b/.test(norm)) {
+      category = "Contact & Address";
+      cleanKey = "emergencyContact";
+
+    // 2. Academic
+    } else if (/\b(10th\s*roll|matric\s*roll|class\s*x\s*roll)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "tenthRollNo";
+    } else if (/\b(10th\s*percent|matric\s*percent|class\s*x\s*percent|10th\s*marks)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "tenthPercentage";
+    } else if (/\b(10th\s*board|matric\s*board)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "tenthBoard";
+    } else if (/\b(12th\s*roll|inter\s*roll|class\s*xii\s*roll)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "twelfthRollNo";
+    } else if (/\b(12th\s*percent|inter\s*percent|class\s*xii\s*percent|12th\s*marks)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "twelfthPercentage";
+    } else if (/\b(12th\s*board|inter\s*board)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "twelfthBoard";
+    } else if (/\b(course|degree|qualification|program)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "currentCourse";
+    } else if (/\b(college|university|institute|institution|campus|school)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "universityName";
+    } else if (/\b(graduation\s*year|passing\s*year|year\s*of\s*passing)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "graduationYear";
+    } else if (/\b(roll\s*no|prn|enrollment|registration\s*no)\b/.test(norm)) {
+      category = "Academic";
+      cleanKey = "rollNo";
+
+    // 3. Identity & Documents
+    } else if (/\b(aadhaar|aadhar|uid)\b/.test(norm)) {
+      category = "Identity & Documents";
+      cleanKey = "aadhaarNumber";
+    } else if (/\b(pan|pancard|tax\s*id)\b/.test(norm)) {
+      category = "Identity & Documents";
+      cleanKey = "panNumber";
+    } else if (/\b(passport)\b/.test(norm)) {
+      category = "Identity & Documents";
+      cleanKey = "passportNumber";
+    } else if (/\b(driving|license|dl)\b/.test(norm)) {
+      category = "Identity & Documents";
+      cleanKey = "drivingLicenseNo";
+    } else if (/\b(voter|epic)\b/.test(norm)) {
+      category = "Identity & Documents";
+      cleanKey = "voterId";
+    } else if (/\b(domicile\s*cert|prc)\b/.test(norm)) {
+      category = "Identity & Documents";
+      cleanKey = "domicileCertNo";
+
+    // 4. Financial & Bank
+    } else if (/\b(bank\s*account|account\s*number|acc\s*no|savings\s*account)\b/.test(norm)) {
+      category = "Financial & Bank";
+      cleanKey = "bankAccountNumber";
+    } else if (/\b(ifsc|branch\s*code)\b/.test(norm)) {
+      category = "Financial & Bank";
+      cleanKey = "ifscCode";
+    } else if (/\b(bank\s*name)\b/.test(norm)) {
+      category = "Financial & Bank";
+      cleanKey = "bankName";
+    } else if (/\b(income|annual\s*income|family\s*income|salary)\b/.test(norm)) {
+      category = "Financial & Bank";
+      cleanKey = "annualIncome";
+
+    // 5. Employment
+    } else if (/\b(experience|years\s*of\s*exp|work\s*exp)\b/.test(norm)) {
+      category = "Employment";
+      cleanKey = "experienceYears";
+    } else if (/\b(designation|current\s*role|job\s*title|occupation)\b/.test(norm)) {
+      category = "Employment";
+      cleanKey = "currentRole";
+    } else if (/\b(company|employer|organization)\b/.test(norm)) {
+      category = "Employment";
+      cleanKey = "currentCompany";
+    } else if (/\b(linkedin)\b/.test(norm)) {
+      category = "Employment";
+      cleanKey = "linkedinUrl";
+
+    // 6. Personal (default)
+    } else if (/\b(dob|birth|birthdate)\b/.test(norm) || inputType === "date") {
+      category = "Personal";
+      cleanKey = "dateOfBirth";
+    } else if (/\b(age)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "age";
+    } else if (/\b(gender|sex)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "gender";
+    } else if (/\b(father|guardian|parent)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "fatherName";
+    } else if (/\b(mother)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "motherName";
+    } else if (/\b(caste|category|community)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "casteCategory";
+    } else if (/\b(first\s*name|given\s*name)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "firstName";
+    } else if (/\b(last\s*name|surname|family\s*name)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "lastName";
+    } else if (/\b(blood\s*group|blood)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "bloodGroup";
+    } else if (/\b(mother\s*tongue|native\s*language)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "motherTongue";
+    } else if (/\b(nationality|citizenship)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "nationality";
+    } else if (/\b(name)\b/.test(norm)) {
+      category = "Personal";
+      cleanKey = "fullName";
+    } else {
+      cleanKey = label
+        .toLowerCase()
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .split(/\s+/)
+        .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
+        .join("");
+      if (!cleanKey) cleanKey = "field_" + Date.now();
+    }
+
+    return {
+      key: cleanKey,
+      label,
+      value,
+      category,
+      learnedAt: new Date().toISOString()
+    };
+  }
+
+  // Refresh badges across all inputs on page
+  function refreshAllInputBadges(profile) {
+    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
+    inputs.forEach((inp) => updateInputBadge(inp, profile || activeProfileCache));
+  }
+
+  // 4. Auto-add new form values to active profile when user enters them
   function handleInputTyping(input) {
+    if (!extensionEnabled) return;
     const inputType = (input.type || "").toLowerCase();
-    // Skip passwords, hidden fields, submit buttons
     if (inputType === "password" || inputType === "hidden" || inputType === "submit" || inputType === "button" || inputType === "reset") {
       return;
     }
@@ -225,7 +437,7 @@
     }
 
     refreshActiveProfile((res) => {
-      const autoAddEnabled = res.formsaathi_auto_add !== false; // defaults to true
+      const autoAddEnabled = res.formsaathi_auto_add !== false;
       const profile = res.formsaathi_active_profile_data || getDefaultProfile();
       const customProfiles = res.formsaathi_custom_profiles || {};
       const activeKey = res.formsaathi_active_profile_key || "academic";
@@ -235,25 +447,53 @@
       const match = matchFieldSemantic(meta, profile);
 
       if (!match) {
-        // FIELD IS NOT IN PROFILE
         if (autoAddEnabled) {
-          const cleanKey = label.replace(/\*$/, "").trim();
-          profile[cleanKey] = val;
+          const structured = structureLearnedField(input.name || input.id, label, val, input.type);
 
-          // Save to active profile and custom profiles
+          // Update profile in both clean camelCase and raw label formats
+          profile[structured.key] = structured.value;
+          profile[label.replace(/\*$/, "").trim()] = structured.value;
+
           if (!customProfiles[activeKey]) {
             customProfiles[activeKey] = { name: res.formsaathi_active_profile_name || "Profile", data: {} };
           }
-          customProfiles[activeKey].data = { ...customProfiles[activeKey].data, [cleanKey]: val };
+          customProfiles[activeKey].data = {
+            ...customProfiles[activeKey].data,
+            [structured.key]: structured.value,
+            [label.replace(/\*$/, "").trim()]: structured.value
+          };
 
-          chrome.storage.local.set({
-            formsaathi_active_profile_data: profile,
-            formsaathi_custom_profiles: customProfiles
-          }, () => {
-            activeProfileCache = profile;
-            input.classList.add("formsaathi-autofilled-highlight");
-            showToast(`✨ FormSaathi saved "${cleanKey}: ${val}" to your Profile!`);
-            updateInputBadge(input, profile);
+          // Save audit log & trigger live update
+          chrome.storage.local.get(["formsaathi_learned_fields_log"], (logRes) => {
+            const log = logRes.formsaathi_learned_fields_log || [];
+            log.unshift({
+              ...structured,
+              profileKey: activeKey,
+              profileName: res.formsaathi_active_profile_name || "Profile",
+              url: window.location.href,
+              timestamp: Date.now()
+            });
+            if (log.length > 50) log.length = 50;
+
+            chrome.storage.local.set({
+              formsaathi_active_profile_data: profile,
+              formsaathi_custom_profiles: customProfiles,
+              formsaathi_learned_fields_log: log,
+              formsaathi_last_updated: Date.now()
+            }, () => {
+              activeProfileCache = profile;
+              input.classList.add("formsaathi-autofilled-highlight");
+              showToast(`✓ Learned [${structured.category}] ${structured.label}: "${structured.value}" → Vault Updated!`);
+              refreshAllInputBadges(profile);
+
+              try {
+                chrome.runtime.sendMessage({
+                  action: "FIELD_LEARNED_UPDATED",
+                  profileKey: activeKey,
+                  learnedField: structured
+                });
+              } catch (e) {}
+            });
           });
         } else {
           updateInputBadge(input, profile);
@@ -269,6 +509,13 @@
     const badge = input.parentElement?.querySelector(".formsaathi-field-badge");
     if (!badge) return;
 
+    if (!extensionEnabled) {
+      badge.style.display = "none";
+      return;
+    } else {
+      badge.style.display = "";
+    }
+
     const label = inferSmartFieldLabel(input);
     const meta = { id: input.id, name: input.name, label };
     const match = matchFieldSemantic(meta, profile || activeProfileCache);
@@ -283,7 +530,7 @@
         badge.classList.add("formsaathi-field-save-badge");
       } else {
         badge.innerHTML = "✨ Learn";
-        badge.title = "FormSaathi: Enter value to save to Profile";
+        badge.title = "FormSaathi: Enter value to save & structure into Profile";
       }
     } else {
       if (currentVal && currentVal !== String(match.value).trim()) {
@@ -297,7 +544,7 @@
     }
   }
 
-  // 4. Attach helpers and event listeners to inputs
+  // 5. Attach helpers and event listeners to inputs
   function attachFieldHelpers() {
     const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
     inputs.forEach((input) => {
@@ -316,9 +563,18 @@
       badge.innerHTML = "✨ Fill";
       badge.title = "FormSaathi: Autofill, update, or save to profile";
 
+      if (!extensionEnabled) {
+        badge.style.display = "none";
+      }
+
       badge.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
+
+        if (!extensionEnabled) {
+          showToast("⏸️ Extension is OFF. Toggle ON in popup to use.");
+          return;
+        }
 
         refreshActiveProfile((res) => {
           const profile = res.formsaathi_active_profile_data || getDefaultProfile();
@@ -330,19 +586,50 @@
           const currentVal = input.value?.trim();
 
           if (badge.classList.contains("formsaathi-field-save-badge") && currentVal) {
-            // Save new field to profile
-            const cleanKey = label.replace(/\*$/, "").trim();
-            profile[cleanKey] = currentVal;
-            if (!customProfiles[activeKey]) customProfiles[activeKey] = { name: "Profile", data: {} };
-            customProfiles[activeKey].data = { ...customProfiles[activeKey].data, [cleanKey]: currentVal };
+            // Save & Structure new field to profile
+            const structured = structureLearnedField(input.name || input.id, label, currentVal, input.type);
 
-            chrome.storage.local.set({
-              formsaathi_active_profile_data: profile,
-              formsaathi_custom_profiles: customProfiles
-            }, () => {
-              activeProfileCache = profile;
-              showToast(`✓ Added "${cleanKey}: ${currentVal}" to Profile!`);
-              updateInputBadge(input, profile);
+            profile[structured.key] = structured.value;
+            profile[label.replace(/\*$/, "").trim()] = structured.value;
+
+            if (!customProfiles[activeKey]) customProfiles[activeKey] = { name: "Profile", data: {} };
+            customProfiles[activeKey].data = {
+              ...customProfiles[activeKey].data,
+              [structured.key]: structured.value,
+              [label.replace(/\*$/, "").trim()]: structured.value
+            };
+
+            chrome.storage.local.get(["formsaathi_learned_fields_log"], (logRes) => {
+              const log = logRes.formsaathi_learned_fields_log || [];
+              log.unshift({
+                ...structured,
+                profileKey: activeKey,
+                profileName: res.formsaathi_active_profile_name || "Profile",
+                url: window.location.href,
+                timestamp: Date.now()
+              });
+              if (log.length > 50) log.length = 50;
+
+              chrome.storage.local.set({
+                formsaathi_active_profile_data: profile,
+                formsaathi_custom_profiles: customProfiles,
+                formsaathi_learned_fields_log: log,
+                formsaathi_last_updated: Date.now()
+              }, () => {
+                activeProfileCache = profile;
+                badge.className = "formsaathi-field-badge formsaathi-field-learned-badge";
+                badge.innerHTML = "✓ Learned";
+                showToast(`✓ Learned [${structured.category}] ${structured.label}: "${structured.value}" → Vault Updated!`);
+                refreshAllInputBadges(profile);
+
+                try {
+                  chrome.runtime.sendMessage({
+                    action: "FIELD_LEARNED_UPDATED",
+                    profileKey: activeKey,
+                    learnedField: structured
+                  });
+                } catch (e) {}
+              });
             });
           } else if (badge.classList.contains("formsaathi-field-update-badge") && match && currentVal) {
             // Update existing field in profile
@@ -352,11 +639,19 @@
 
             chrome.storage.local.set({
               formsaathi_active_profile_data: profile,
-              formsaathi_custom_profiles: customProfiles
+              formsaathi_custom_profiles: customProfiles,
+              formsaathi_last_updated: Date.now()
             }, () => {
               activeProfileCache = profile;
               showToast(`✓ Updated "${match.matchedKey}" to "${currentVal}" in Profile!`);
-              updateInputBadge(input, profile);
+              refreshAllInputBadges(profile);
+
+              try {
+                chrome.runtime.sendMessage({
+                  action: "FIELD_LEARNED_UPDATED",
+                  profileKey: activeKey
+                });
+              } catch (e) {}
             });
           } else {
             // Fill from profile
@@ -655,7 +950,13 @@
 
   // Message listener from popup
   chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
-    if (req.action === "DETECT_PAGE_FIELDS") {
+    if (req.action === "SET_EXTENSION_POWER" || req.action === "TOGGLE_EXTENSION") {
+      const isEnabled = !!req.enabled;
+      applyExtensionState(isEnabled);
+      showToast(isEnabled ? "✓ FormSaathi Extension Enabled" : "⏸️ FormSaathi Extension Paused");
+      sendResponse({ status: "success", enabled: isEnabled });
+      return true;
+    } else if (req.action === "DETECT_PAGE_FIELDS") {
       const detected = [];
       const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
       inputs.forEach((el, i) => {
@@ -672,11 +973,21 @@
           hasValue: !!(el.value && el.value.trim().length > 0)
         });
       });
-      sendResponse({ status: "success", fields: detected, title: document.title, url: location.href });
+      sendResponse({ status: "success", fields: detected, title: document.title, url: location.href, extensionEnabled });
     } else if (req.action === "AUTOFILL_PAGE") {
+      if (!extensionEnabled) {
+        showToast("⏸️ Extension is OFF. Toggle ON in popup to use autofill.");
+        sendResponse({ status: "error", message: "Extension disabled" });
+        return true;
+      }
       autofillAllFields(req.profileData, req.profileName || "Profile");
       sendResponse({ status: "success" });
     } else if (req.action === "AUTOFILL_SINGLE_FIELD") {
+      if (!extensionEnabled) {
+        showToast("⏸️ Extension is OFF. Toggle ON in popup to use autofill.");
+        sendResponse({ status: "error", message: "Extension disabled" });
+        return true;
+      }
       const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
       let target = null;
       if (typeof req.index === "number" && inputs[req.index]) {
@@ -697,6 +1008,21 @@
     return true;
   });
 
+  // Storage change listener to stay synchronized with popup
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local") {
+        if (changes.formsaathi_extension_enabled !== undefined) {
+          applyExtensionState(!!changes.formsaathi_extension_enabled.newValue);
+        }
+        if (changes.formsaathi_active_profile_data && changes.formsaathi_active_profile_data.newValue) {
+          activeProfileCache = changes.formsaathi_active_profile_data.newValue;
+          refreshAllInputBadges(activeProfileCache);
+        }
+      }
+    });
+  }
+
   // Init
   refreshActiveProfile(() => {
     setTimeout(() => {
@@ -706,7 +1032,9 @@
   });
 
   const observer = new MutationObserver(() => {
-    attachFieldHelpers();
+    if (extensionEnabled) {
+      attachFieldHelpers();
+    }
   });
   observer.observe(document.body, { childList: true, subtree: true });
 })();

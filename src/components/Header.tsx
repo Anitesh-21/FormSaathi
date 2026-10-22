@@ -196,9 +196,9 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Minimize2 className="w-4 h-4" />
-            <span>File Compressor</span>
+            <span>PDF &amp; File Compressor</span>
             <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1 rounded border border-emerald-200">
-              50KB-100KB
+              PDF &amp; Images
             </span>
           </button>
 
@@ -211,7 +211,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <FileCode className="w-4 h-4" />
-            <span>Format Converter</span>
+            <span>Image &amp; Doc Converter</span>
           </button>
         </nav>
       </div>

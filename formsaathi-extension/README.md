@@ -19,28 +19,35 @@ FormSaathi AI is an intelligent browser extension that automates online forms, m
      - **Name Mismatch**: Handling Aadhaar vs Class 10 marksheet name discrepancies.
      - **DigiLocker Verification**: Using legally valid digital documents under IT Act 2000.
 
-3. **Smart Voice & Text Assistant with Accurate Profile Access**:
+3. **Master Extension ON / OFF Toggle Switch**:
+   - Convenient power switch in the popup header with glowing status indicator.
+   - Pause or re-activate FormSaathi anytime with 1 click.
+   - When turned OFF, in-page floating docks, auto-learn listeners, and field badges are safely hidden and dormant.
+
+4. **Structured Auto-Learn & Real-Time Vault Updates**:
+   - **Structure Accordingly**: Every newly entered or saved field is automatically classified into the appropriate domain category (*Personal*, *Contact & Address*, *Academic*, *Identity & Documents*, *Financial & Bank*, or *Employment*).
+   - Generates normalized camelCase identifiers (e.g. `tenthBoard`, `alternateMobile`, `bloodGroup`, `emergencyContact`) and stores clean labels.
+   - **Update After Every Learn**: Immediately synchronizes to `chrome.storage.local`, logs audit records, updates in-page helper badges to `✓ Learned` / `↺ Update`, and triggers real-time tab re-scans so newly learned fields show as 🟢 Matched without needing page reload.
+   - **Vault Category Filtering**: Filter attributes in your Profile tab by category chips (*Personal*, *Contact*, *Academic*, *Identity*, *Financial*, *Work*).
+
+5. **Smart Voice & Text Assistant with Accurate Profile Access**:
    - **Type or Speak**: Ask in Hindi, English, or Hinglish via voice or text input.
    - **Categorized Question Chips**: Tap any chip to instantly get verified answers.
    - **Live Audio Playback & Copy**: Hear answers spoken aloud in regional voices or copy text to clipboard.
 
-4. **Add New Profiles & Multi-Profile Vault**:
+6. **Add New Profiles & Multi-Profile Vault**:
    - Create custom profiles with templates (*Standard*, *Job & Career*, *Government Welfare & DBT*, or *Blank*).
    - Switch active profiles instantly from the top control strip or delete custom profiles.
 
-5. **Auto-Add to Profile When Typing**:
-   - Automatically detects and saves unmapped typed form inputs to your profile in `chrome.storage.local`.
-   - In-page confirmation toasts, glowing highlights, and an easy toggle in the popup.
-
-6. **In-Page Interactive Helpers & Floating Dock**:
+7. **In-Page Interactive Helpers & Floating Dock**:
    - Floating quick-fill dock button on any web page.
-   - In-page badges beside form fields: `✨ Fill`, `💾 + Profile`, and `↺ Update`.
+   - In-page badges beside form fields: `✨ Fill`, `💾 + Profile`, `✓ Learned`, and `↺ Update`.
 
-7. **Universal Form Scanner & Multilingual Explanations**:
+8. **Universal Form Scanner & Multilingual Explanations**:
    - Detects all form inputs on active browser tab with semantic fuzzy matching.
    - Voice explanations in 9 Indian languages.
 
-8. **Integrated Utilities**:
+9. **Integrated Utilities**:
    - **Document Compressor**: Shrink certificates and photos (20 KB, 50 KB, 100 KB, 200 KB).
    - **Format Converter**: Convert photos to print-ready A4 PDF and generate signed self-declaration PDFs.
    - **OCR Learner**: Extract information from receipts and confirmation slips into your profile.

@@ -32,13 +32,32 @@
     ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
 
     /* Top Header */
-    .header { background: linear-gradient(135deg, #1e1b4b 0%, #090d16 100%); color: white; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-accent); }
+    .header { background: linear-gradient(135deg, #1e1b4b 0%, #090d16 100%); color: white; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-accent); }
     .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 15px; letter-spacing: -0.2px; }
     .brand-badge { background: rgba(99, 102, 241, 0.25); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4); padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 800; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); display: inline-block; box-shadow: 0 0 8px var(--emerald); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); display: inline-block; box-shadow: 0 0 8px var(--emerald); transition: all 0.2s ease; }
+    .status-dot.off { background: #64748b; box-shadow: none; }
     
-    /* Profile & Language Bar */
-    .control-strip { background: #0c1222; border-bottom: 1px solid var(--border); padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11.5px; }
+    /* Extension Power Master Switch */
+    .power-toggle-wrap { display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.7); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.12); }
+    .power-label { font-size: 11px; font-weight: 800; letter-spacing: 0.3px; color: #34d399; }
+    .power-label.off { color: #94a3b8; }
+    .switch-btn { position: relative; display: inline-block; width: 34px; height: 18px; margin: 0; }
+    .switch-btn input { opacity: 0; width: 0; height: 0; }
+    .switch-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .25s; border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.15); }
+    .switch-slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 2px; bottom: 2px; background-color: white; transition: .25s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+    .switch-btn input:checked + .switch-slider { background-color: #10b981; border-color: #34d399; }
+    .switch-btn input:checked + .switch-slider:before { transform: translateX(16px); }
+
+    /* Category Tag in Vault */
+    .field-category-pill { font-size: 9px; font-weight: 700; padding: 1.5px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; display: inline-block; }
+    .cat-personal { background: rgba(99, 102, 241, 0.18); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .cat-contact { background: rgba(6, 182, 212, 0.18); color: #7dd3fc; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .cat-academic { background: rgba(168, 85, 247, 0.18); color: #e9d5ff; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .cat-identity { background: rgba(245, 158, 11, 0.18); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .cat-financial { background: rgba(16, 185, 129, 0.18); color: #a7f3d0; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .cat-employment { background: rgba(236, 72, 153, 0.18); color: #fbcfe8; border: 1px solid rgba(236, 72, 153, 0.3); }
+
     .select-input { background: #131c31; border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-size: 11.5px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; max-width: 195px; transition: border-color 0.15s; }
     .select-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
 
@@ -153,16 +172,31 @@
   </style>
 </head>
 <body>
-  <!-- Header -->
+  <!-- Header with Master Toggle -->
   <div class="header">
     <div class="brand">
       <span>✨ FormSaathi AI</span>
       <span class="brand-badge">Universal</span>
     </div>
-    <div style="font-size: 11.5px; display: flex; align-items: center; gap: 7px;">
-      <span class="status-dot"></span>
-      <span style="color: #94a3b8; font-weight: 600;">Active in Tab</span>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="font-size: 11px; display: flex; align-items: center; gap: 6px;">
+        <span class="status-dot" id="headerStatusDot"></span>
+        <span id="headerStatusText" style="color: #cbd5e1; font-weight: 600;">Active</span>
+      </div>
+      <!-- Extension ON / OFF Toggle Button -->
+      <div class="power-toggle-wrap" title="Toggle FormSaathi Extension ON or OFF">
+        <span class="power-label" id="powerToggleText">ON</span>
+        <label class="switch-btn" for="extensionPowerToggle">
+          <input type="checkbox" id="extensionPowerToggle" checked aria-label="Toggle Extension ON / OFF" />
+          <span class="switch-slider"></span>
+        </label>
+      </div>
     </div>
+  </div>
+
+  <!-- Extension Disabled Alert Banner -->
+  <div id="extensionDisabledAlertBanner" style="display: none; background: rgba(239, 68, 68, 0.15); border-bottom: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5; padding: 7px 18px; font-size: 11px; font-weight: 700; text-align: center;">
+    <span>⏸️ Extension is OFF: In-page floating assistant and autofill are paused.</span>
   </div>
 
   <!-- Profile & Language Control Strip -->
@@ -299,7 +333,19 @@
       <div id="addNewFieldBox" style="display: none; background: #0c1527; border: 1px solid var(--border-accent); border-radius: 10px; padding: 14px; margin-bottom: 14px;">
         <div style="font-weight: 700; font-size: 11.5px; color: #a5b4fc; margin-bottom: 8px;">Add New Field to Active Profile</div>
         <input type="text" id="newFieldKeyInput" placeholder="Field Label (e.g. Blood Group, Alternate Mobile)" style="width: 100%; font-size: 12px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 8px; background: #070c18; color: #fff;" />
-        <input type="text" id="newFieldValueInput" placeholder="Field Value (e.g. B+, 9876543210)" style="width: 100%; font-size: 12px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 10px; background: #070c18; color: #fff;" />
+        <input type="text" id="newFieldValueInput" placeholder="Field Value (e.g. B+, 9876543210)" style="width: 100%; font-size: 12px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 8px; background: #070c18; color: #fff;" />
+        <div style="margin-bottom: 10px;">
+          <label style="font-size: 10.5px; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 3px;">Field Category:</label>
+          <select id="newFieldCategorySelect" class="select-input" style="width: 100%; max-width: 100%;">
+            <option value="AUTO">✨ Auto-Detect Category from Label</option>
+            <option value="Personal">Personal (Name, DOB, Gender, Caste, Blood)</option>
+            <option value="Contact & Address">Contact & Address (Phone, Email, PIN, City)</option>
+            <option value="Academic">Academic (10th/12th, Degree, Roll, College)</option>
+            <option value="Identity & Documents">Identity & Documents (Aadhaar, PAN, Passport)</option>
+            <option value="Financial & Bank">Financial & Bank (Account, IFSC, Income)</option>
+            <option value="Employment">Employment (Job Role, Company, Experience)</option>
+          </select>
+        </div>
         <div style="display: flex; gap: 8px;">
           <button id="saveNewFieldBtn" class="btn-primary" style="flex: 1; padding: 7px 12px; font-size: 11.5px;">Save Field</button>
           <button id="cancelNewFieldBtn" class="btn-secondary" style="margin-top: 0; width: auto; padding: 7px 12px; font-size: 11.5px;">Cancel</button>
@@ -307,9 +353,20 @@
       </div>
 
       <!-- Search in Profile Fields -->
-      <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
         <input type="text" id="searchVaultInput" placeholder="Search saved attributes (e.g. roll, bank, phone)..." style="flex: 1; font-size: 11.5px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 7px; background: #0c1222; color: #fff;" />
         <button id="deleteCurrentProfileBtn" title="Delete current custom profile" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 7px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer;">Delete</button>
+      </div>
+
+      <!-- Category Filter Chips -->
+      <div id="vaultCategoryFilterBar" style="display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; font-size: 10px;">
+        <button class="filter-btn active" data-cat="ALL" id="catBtnAll" style="padding: 3px 8px; font-size: 10px;">All (<span id="catCountAll">0</span>)</button>
+        <button class="filter-btn" data-cat="Personal" style="padding: 3px 8px; font-size: 10px;">Personal</button>
+        <button class="filter-btn" data-cat="Contact & Address" style="padding: 3px 8px; font-size: 10px;">Contact</button>
+        <button class="filter-btn" data-cat="Academic" style="padding: 3px 8px; font-size: 10px;">Academic</button>
+        <button class="filter-btn" data-cat="Identity & Documents" style="padding: 3px 8px; font-size: 10px;">Identity</button>
+        <button class="filter-btn" data-cat="Financial & Bank" style="padding: 3px 8px; font-size: 10px;">Financial</button>
+        <button class="filter-btn" data-cat="Employment" style="padding: 3px 8px; font-size: 10px;">Work</button>
       </div>
 
       <!-- Field List Container -->

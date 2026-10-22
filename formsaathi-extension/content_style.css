@@ -95,6 +95,29 @@
   color: #ffffff !important;
 }
 
+/* Successfully Learned Badge State */
+.formsaathi-field-learned-badge {
+  background: rgba(16, 185, 129, 0.25) !important;
+  border: 1px solid rgba(16, 185, 129, 0.6) !important;
+  color: #6ee7b7 !important;
+  animation: formsaathi-badge-pop 0.3s ease-out;
+}
+@keyframes formsaathi-badge-pop {
+  0% { transform: translateY(-50%) scale(0.85); }
+  50% { transform: translateY(-50%) scale(1.15); }
+  100% { transform: translateY(-50%) scale(1); }
+}
+
+/* When extension is toggled OFF */
+body.formsaathi-disabled #formsaathi-floating-dock,
+#formsaathi-floating-dock.formsaathi-dock-hidden {
+  display: none !important;
+}
+body.formsaathi-disabled .formsaathi-field-badge,
+.formsaathi-field-badge.formsaathi-badge-disabled {
+  display: none !important;
+}
+
 #formsaathi-toast {
   position: fixed;
   top: 20px;
@@ -113,8 +136,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: 390px;
+  max-width: 440px;
   backdrop-filter: blur(12px);
+}
+
+.formsaathi-toast-category-tag {
+  background: rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #c7d2fe;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .formsaathi-autofilled-highlight {

@@ -133,26 +133,167 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
   const [activeTooltipFieldId, setActiveTooltipFieldId] = useState<string | null>(null);
   const [tooltipData, setTooltipData] = useState<{ explanation: string; tip: string; example: string } | null>(null);
   const [isLoadingTooltip, setIsLoadingTooltip] = useState(false);
+  const [isAutofilling, setIsAutofilling] = useState(false);
+  const [autofillToast, setAutofillToast] = useState<string | null>(null);
 
-  // Parse custom HTML into fields
+  // Helper to infer intelligent, descriptive labels from elements without ever falling back to generic "Input Field"
+  const inferDescriptiveLabel = (raw: string, el?: Element, idx: number = 0) => {
+    // 1. Check placeholder for strong semantic indicators first
+    const ph = el?.getAttribute('placeholder') || '';
+    if (ph) {
+      const phLower = ph.toLowerCase();
+      if (phLower.includes('@') || phLower.includes('.com') || phLower.includes('.in')) return 'Primary Email Address';
+      if (phLower.startsWith('+') || /^\+?\d[\d\s-]{6,}$/.test(phLower) || phLower.includes('phone') || phLower.includes('mobile')) return 'Mobile / Telephone';
+      if (phLower.includes('first and last') || phLower.includes('legal name') || phLower.includes('full name') || phLower.includes('applicant name')) return 'Full Legal Name';
+      if (phLower.includes('jaipur') || phLower.includes('city') || phLower.includes('state')) return 'Current City & State';
+      if (phLower.includes('street') || phLower.includes('house') || phLower.includes('address') || phLower.includes('flat')) return 'Residential Address';
+      if (phLower.includes('pincode') || phLower.includes('postal') || phLower.includes('zip')) return 'Postal / PIN Code';
+      if (phLower.includes('university') || phLower.includes('college') || phLower.includes('institute')) return 'University / College Name';
+      if (phLower.includes('b.tech') || phLower.includes('degree') || phLower.includes('course') || phLower.includes('bca') || phLower.includes('m.tech')) return 'Highest Degree Completed';
+      if (phLower.includes('associate') || phLower.includes('role') || phLower.includes('designation') || phLower.includes('developer')) return 'Current Title / Designation';
+      if (phLower.includes('years') || phLower.includes('experience')) return 'Total Years of Experience';
+      if (phLower.includes('202') || phLower.includes('passing') || phLower.includes('graduation')) return 'Year of Graduation';
+      if (phLower.includes('linkedin') || phLower.startsWith('http')) return 'LinkedIn Profile URL';
+      if (phLower.includes('pan') || phLower.includes('tax')) return 'PAN / Tax ID Number';
+      if (phLower.includes('ifsc')) return 'Branch IFSC Code';
+      if (phLower.includes('bank') || phLower.includes('savings') || phLower.includes('account')) return 'Bank Account Number';
+      if (phLower.includes('dd/mm') || phLower.includes('yyyy') || phLower.includes('birth')) return 'Date of Birth';
+    }
+
+    // 2. Strip generic words like input, field, txt, control, item
+    let cleaned = (raw || '')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\b(id|txt|input|field|val|elem|control|item|data|form)\b/gi, '')
+      .trim();
+
+    if (cleaned && !/^\d+$/.test(cleaned) && cleaned.length > 1) {
+      return cleaned
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+
+    // 3. Check element type & attributes
+    const inputType = (el?.getAttribute('type') || (el?.tagName === 'TEXTAREA' ? 'textarea' : 'text')).toLowerCase();
+    if (inputType === 'email') return 'Primary Email Address';
+    if (inputType === 'tel') return 'Mobile / Telephone';
+    if (inputType === 'date') return 'Date of Birth';
+    if (inputType === 'textarea') return 'Full Residential Address';
+    if (inputType === 'file') return 'Document / Certificate Upload';
+    if (inputType === 'number') return 'Numeric Detail / Amount';
+    if (el?.tagName === 'SELECT') return 'Select Option';
+
+    // 4. Professional fallback without generic "Input Field"
+    return `Form Detail ${idx + 1}`;
+  };
+
+  // Detect whether a placeholder is just sample input data rather than a true descriptive label
+  const isSamplePlaceholder = (str: string) => {
+    if (!str) return true;
+    const s = str.trim().toLowerCase();
+    if (s.startsWith('+') || /^\+?\d[\d\s-]{6,}$/.test(s)) return true; // phone format e.g. +91 98765 43210
+    if (s.includes('@') || s.includes('.com') || s.includes('.org') || s.includes('.in') || s.includes('.net')) return true; // email
+    if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('www.')) return true; // url
+    if (/^(e\.?g\.?|ex\.?|for example|sample|such as)\b/i.test(s)) return true; // e.g. Jaipur, e.g. 2021
+    if (/^(yyyy|dd\/mm|mm\/dd|dd-mm|mm-dd)/i.test(s)) return true; // date formats
+    if (/^(enter|type|input|select|choose|search|write|fill|provide|first and last)\b/i.test(s)) return true; // action instructions
+    if (/^\d+(\.\d+)?(\s*(years?|yrs?|lakh|inr|rs\.?|%|kg|mb|kb))?$/i.test(s)) return true; // numbers/measurements
+    return false;
+  };
+
+  // Parse custom HTML into fields with actual, readable labels
   const parseCustomHtml = (htmlStr: string) => {
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlStr, 'text/html');
-      const inputs = doc.querySelectorAll('input, select, textarea');
+      const inputs = doc.querySelectorAll('input:not([type="hidden"]):not([type="submit"]), select, textarea');
 
       const parsed: FormFieldDef[] = [];
       inputs.forEach((el, idx) => {
-        const id = el.id || el.getAttribute('name') || `input_${idx}`;
+        const id = el.id || el.getAttribute('name') || `field_${idx + 1}`;
         let labelText = '';
 
-        // Find associated label
+        // 1. Explicit <label for="id">
         if (el.id) {
           const lbl = doc.querySelector(`label[for="${el.id}"]`);
           if (lbl) labelText = lbl.textContent?.trim() || '';
         }
+
+        // 2. Enclosing <label>
         if (!labelText) {
-          labelText = el.getAttribute('name') || el.getAttribute('placeholder') || `Field ${idx + 1}`;
+          const parentLabel = el.closest('label');
+          if (parentLabel) {
+            const clone = parentLabel.cloneNode(true) as HTMLElement;
+            clone.querySelectorAll('input, select, textarea, button').forEach((n) => n.remove());
+            labelText = clone.textContent?.trim() || '';
+          }
+        }
+
+        // 3. Preceding sibling label/text
+        if (!labelText) {
+          const prev = el.previousElementSibling;
+          if (prev && ['LABEL', 'SPAN', 'DIV', 'STRONG', 'B', 'P', 'DT', 'TH'].includes(prev.tagName)) {
+            labelText = prev.textContent?.trim() || '';
+          }
+        }
+
+        // 4. Aria label or title
+        if (!labelText) {
+          labelText = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+        }
+
+        // If labelText looks like a sample value, discard it
+        if (labelText && isSamplePlaceholder(labelText)) {
+          labelText = '';
+        }
+
+        // 5. Placeholder ONLY if it is truly descriptive and not a sample value
+        if (!labelText) {
+          const ph = el.getAttribute('placeholder') || '';
+          if (ph && !isSamplePlaceholder(ph)) {
+            labelText = ph;
+          }
+        }
+
+        // 6. Semantic recognition from input type and id/name attributes
+        const rawAttr = `${el.getAttribute('name') || ''} ${el.id || ''}`.toLowerCase().replace(/[^a-z0-9]/g, ' ');
+        const inputType = (el.getAttribute('type') || (el.tagName === 'TEXTAREA' ? 'textarea' : 'text')).toLowerCase();
+
+        if (!labelText || /^(field|input|item)[s_-]*\d*$/i.test(labelText) || /input\s*field/i.test(labelText)) {
+          if (inputType === 'tel' || /\b(phone|mobile|tel|contact)\b/i.test(rawAttr)) {
+            labelText = 'Mobile / Telephone';
+          } else if (inputType === 'email' || /\b(email|mail)\b/i.test(rawAttr)) {
+            labelText = 'Primary Email Address';
+          } else if (/\b(full\s*name|candidate\s*name|applicant\s*name|legal\s*name)\b/i.test(rawAttr)) {
+            labelText = 'Full Legal Name';
+          } else if (/\b(city\s*&?\s*state|current_city|city_state)\b/i.test(rawAttr)) {
+            labelText = 'Current City & State';
+          } else if (/\b(dob|birth|bday)\b/i.test(rawAttr) || inputType === 'date') {
+            labelText = 'Date of Birth';
+          } else if (/\b(address|residence|addr)\b/i.test(rawAttr) || inputType === 'textarea') {
+            labelText = 'Residential Address';
+          } else if (/\b(pan|pancard)\b/i.test(rawAttr)) {
+            labelText = 'PAN Card Number';
+          } else if (/\b(bank|account)\b/i.test(rawAttr)) {
+            labelText = 'Bank Account Number';
+          } else if (/\b(ifsc)\b/i.test(rawAttr)) {
+            labelText = 'Bank IFSC Code';
+          } else if (/\b(tax|tax_id)\b/i.test(rawAttr)) {
+            labelText = 'Tax / Registration ID';
+          } else if (/\b(vendor|company)\b/i.test(rawAttr)) {
+            labelText = 'Company / Vendor Contact Name';
+          } else {
+            labelText = inferDescriptiveLabel(el.getAttribute('name') || el.id || '', el, idx);
+          }
+        }
+
+        // Clean trailing colons and required stars
+        labelText = labelText.replace(/[:*]+$/, '').trim();
+
+        // Ensure no "Input Field" string ever leaks through
+        if (!labelText || /input\s*field/i.test(labelText) || /^(input|field)\s*\d*$/i.test(labelText)) {
+          labelText = inferDescriptiveLabel(el.getAttribute('name') || el.id || '', el, idx);
         }
 
         const type = (el.getAttribute('type') || (el.tagName === 'TEXTAREA' ? 'textarea' : 'text')) as any;
@@ -161,7 +302,7 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
           label: labelText,
           type: type === 'password' ? 'text' : type,
           placeholder: el.getAttribute('placeholder') || undefined,
-          required: el.hasAttribute('required'),
+          required: el.hasAttribute('required') || el.getAttribute('aria-required') === 'true',
           category: 'Detected Form Fields',
         });
       });
@@ -172,6 +313,8 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
         setCurrentDomain('custom-web-page.local/form');
         setFieldValues({});
         setAutofilledFields({});
+        setAutofillToast(`Parsed ${parsed.length} form fields with actual labels!`);
+        setTimeout(() => setAutofillToast(null), 3500);
       } else {
         alert('Could not find any <input>, <select>, or <textarea> in the pasted HTML.');
       }
@@ -195,28 +338,81 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
 
   // Run Extension Autofill across ANY form
   const handleRunExtensionAutofill = async () => {
-    const profileData: Record<string, string> = {};
+    setIsAutofilling(true);
+    try {
+      const profileData: Record<string, string> = {};
+      activeProfile.fields.forEach((f) => {
+        profileData[f.key] = f.value;
+        profileData[f.label] = f.value;
+      });
+
+      const result = await suggestAutofill({
+        formFields: currentFields,
+        profileData,
+        profileName: activeProfile.name,
+      });
+
+      const nextValues: Record<string, string> = { ...fieldValues };
+      const nextFilled: Record<string, boolean> = { ...autofilledFields };
+
+      const matchesList = Array.isArray(result?.matches)
+        ? result.matches
+        : Object.entries(result?.matches || {}).map(([k, v]: [string, any]) => ({
+            fieldId: v?.fieldId || k,
+            suggestedValue: v?.suggestedValue || v?.value || String(v),
+          }));
+
+      let count = 0;
+      matchesList.forEach((m) => {
+        if (m.fieldId && m.suggestedValue !== undefined && m.suggestedValue !== '') {
+          nextValues[m.fieldId] = String(m.suggestedValue);
+          nextFilled[m.fieldId] = true;
+          count++;
+        }
+      });
+
+      setFieldValues(nextValues);
+      setAutofilledFields(nextFilled);
+      setAutofillToast(`✨ FormSaathi autofilled ${count} fields from "${activeProfile.name}"!`);
+      setTimeout(() => setAutofillToast(null), 4000);
+    } catch (err) {
+      console.error('Autofill error:', err);
+      setAutofillToast('Failed to autofill. Please try again.');
+      setTimeout(() => setAutofillToast(null), 3000);
+    } finally {
+      setIsAutofilling(false);
+    }
+  };
+
+  // Autofill single field from profile
+  const handleAutofillSingleField = (field: FormFieldDef) => {
+    const pData: Record<string, string> = {};
     activeProfile.fields.forEach((f) => {
-      profileData[f.key] = f.value;
-      profileData[f.label] = f.value;
+      pData[f.key] = f.value;
+      pData[f.label] = f.value;
     });
 
-    const result = await suggestAutofill({
-      formFields: currentFields,
-      profileData,
-      profileName: activeProfile.name,
-    });
-
-    const nextValues: Record<string, string> = { ...fieldValues };
-    const nextFilled: Record<string, boolean> = { ...autofilledFields };
-
-    result.matches.forEach((m) => {
-      nextValues[m.fieldId] = m.suggestedValue;
-      nextFilled[m.fieldId] = true;
-    });
-
-    setFieldValues(nextValues);
-    setAutofilledFields(nextFilled);
+    // Check direct key or match
+    const raw = `${field.id} ${field.label} ${field.placeholder || ''}`.toLowerCase();
+    for (const [k, v] of Object.entries(pData)) {
+      if (!v) continue;
+      const kLow = k.toLowerCase();
+      if (raw.includes(kLow) || kLow.includes(field.id.toLowerCase())) {
+        setFieldValues((prev) => ({ ...prev, [field.id]: v }));
+        setAutofilledFields((prev) => ({ ...prev, [field.id]: true }));
+        setAutofillToast(`Filled ${field.label} = ${v}`);
+        setTimeout(() => setAutofillToast(null), 3000);
+        return;
+      }
+    }
+    // Fallback to first matching value or profile name
+    if (raw.includes('name')) {
+      const val = pData.fullName || activeProfile.name;
+      setFieldValues((prev) => ({ ...prev, [field.id]: val }));
+      setAutofilledFields((prev) => ({ ...prev, [field.id]: true }));
+      setAutofillToast(`Filled ${field.label} = ${val}`);
+      setTimeout(() => setAutofillToast(null), 3000);
+    }
   };
 
   // Request field explanation tooltip on click of the extension badge
@@ -256,7 +452,7 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
               Extension Live Form Inspector & Autofiller
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-3xl">
-              Simulates the FormSaathi extension running inside any external browser tab. Inspects arbitrary input fields on any page, injects assistant badges, explains criteria in {currentLanguage}, and autofills with one click.
+              Simulates the FormSaathi extension running inside any external browser tab. Inspects every form element on any page, injects assistant badges, explains criteria in {currentLanguage}, and autofills with one click.
             </p>
           </div>
 
@@ -264,13 +460,31 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleRunExtensionAutofill}
-              className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer hover:scale-102"
+              disabled={isAutofilling}
+              className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer hover:scale-102 disabled:opacity-60"
             >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>Autofill Entire Form from "{activeProfile.name}"</span>
+              {isAutofilling ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
+                  <span>Matching Vault & Autofilling...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>Autofill Entire Form from "{activeProfile.name}"</span>
+                </>
+              )}
             </button>
           </div>
         </div>
+
+        {/* Dynamic Autofill Feedback Toast */}
+        {autofillToast && (
+          <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{autofillToast}</span>
+          </div>
+        )}
 
         {/* Tab switcher: Presets or Custom HTML Form */}
         <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
@@ -411,8 +625,8 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-800 block">
-                        {field.label} {field.required && <span className="text-rose-500">*</span>}
+                      <label htmlFor={field.id} className="text-xs font-semibold text-slate-800 block">
+                        {field.label} {field.required && <span className="text-rose-500 font-bold">*</span>}
                       </label>
 
                       {isAutofilled && (
@@ -427,6 +641,10 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                     <div className="relative">
                       {field.type === 'select' ? (
                         <select
+                          id={field.id}
+                          name={field.id}
+                          aria-label={`${field.label}${field.required ? ' *' : ''}`}
+                          data-field-label={`${field.label}${field.required ? ' *' : ''}`}
                           value={value}
                           onChange={(e) =>
                             setFieldValues({ ...fieldValues, [field.id]: e.target.value })
@@ -446,6 +664,10 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                         </select>
                       ) : field.type === 'textarea' ? (
                         <textarea
+                          id={field.id}
+                          name={field.id}
+                          aria-label={`${field.label}${field.required ? ' *' : ''}`}
+                          data-field-label={`${field.label}${field.required ? ' *' : ''}`}
                           rows={3}
                           value={value}
                           placeholder={field.placeholder}
@@ -460,7 +682,11 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                         />
                       ) : (
                         <input
+                          id={field.id}
+                          name={field.id}
                           type={field.type}
+                          aria-label={`${field.label}${field.required ? ' *' : ''}`}
+                          data-field-label={`${field.label}${field.required ? ' *' : ''}`}
                           value={value}
                           placeholder={field.placeholder}
                           onChange={(e) =>
@@ -521,6 +747,20 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                                 Example format: <code className="font-mono text-indigo-700 font-semibold">{tooltipData.example}</code>
                               </div>
                             )}
+
+                            <div className="pt-1 flex items-center justify-between border-t border-indigo-100/70">
+                              <span className="text-[10px] text-slate-500">
+                                Match available in: <strong>{activeProfile.name}</strong>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAutofillSingleField(field)}
+                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold shadow-2xs flex items-center gap-1 cursor-pointer"
+                              >
+                                <Sparkles className="w-3 h-3 text-amber-300" />
+                                <span>Fill This Field</span>
+                              </button>
+                            </div>
                           </div>
                         ) : null}
                       </div>

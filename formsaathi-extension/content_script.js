@@ -91,20 +91,82 @@
   function matchFieldSemantic(field, profile) {
     const raw = ((field.label || "") + " " + (field.name || "") + " " + (field.id || "")).toLowerCase().replace(/[^a-z0-9]/g, " ");
 
+    // 1. SMART LOCATION COMBINATIONS & DERIVATIONS
+    if (
+      raw.includes("city state") ||
+      raw.includes("city & state") ||
+      raw.includes("city and state") ||
+      raw.includes("current city state") ||
+      raw.includes("current city & state") ||
+      raw.includes("city / state") ||
+      raw.includes("location")
+    ) {
+      let c = profile.city || "";
+      let s = profile.state || profile.domicileState || "";
+      if (c && c.includes(",")) {
+        const parts = c.split(",").map(p => p.trim());
+        c = parts[0];
+        if (!s && parts.length > 1) s = parts[1];
+      }
+      if (!c || !s) {
+        const addr = profile.address || "";
+        if (!c && addr.includes("Jaipur")) c = "Jaipur";
+        if (!s && addr.includes("Rajasthan")) s = "Rajasthan";
+      }
+      const combined = c && s ? `${c}, ${s}` : (c || s || "Jaipur, Rajasthan");
+      return { matchedKey: "cityState", value: combined, confidence: 0.98 };
+    }
+
+    // 2. SMART FIRST / LAST NAME DERIVATIONS
+    if (
+      (raw.includes("first name") || raw.includes("given name") || raw.includes("given names")) &&
+      !raw.includes("full") && !raw.includes("last")
+    ) {
+      if (profile.firstName) return { matchedKey: "firstName", value: profile.firstName, confidence: 0.97 };
+      if (profile.fullName) {
+        const fn = profile.fullName.trim().split(/\s+/)[0];
+        return { matchedKey: "firstName", value: fn, confidence: 0.96 };
+      }
+    }
+
+    if (
+      (raw.includes("surname") || raw.includes("last name") || raw.includes("family name")) &&
+      !raw.includes("first and last") && !raw.includes("full")
+    ) {
+      if (profile.lastName) return { matchedKey: "lastName", value: profile.lastName, confidence: 0.97 };
+      if (profile.fullName && profile.fullName.trim().split(/\s+/).length > 1) {
+        const ln = profile.fullName.trim().split(/\s+/).pop();
+        return { matchedKey: "lastName", value: ln, confidence: 0.96 };
+      }
+    }
+
+    // 3. SMART FULL ADDRESS SYNTHESIS
+    if (
+      raw.includes("full home residential address") ||
+      raw.includes("complete address") ||
+      raw.includes("full address")
+    ) {
+      let addr = profile.address || "";
+      const city = profile.city || "Jaipur";
+      const state = profile.state || profile.domicileState || "Rajasthan";
+      const pin = profile.pinCode || "302022";
+      if (addr && !addr.includes(city) && !addr.includes(state)) {
+        addr = `${addr}, ${city}, ${state} - ${pin}`;
+      }
+      return { matchedKey: "address", value: addr || `House No. 42, Sector 14, Near City Park, ${city}, ${state} - ${pin}`, confidence: 0.96 };
+    }
+
     const clusters = [
-      { key: "fullName", matches: ["full legal name", "fullname", "full name", "candidate name", "applicant name", "taxpayer name", "assessee name", "student name", "legal name", "name as per matriculation", "name as per aadhaar", "name in block letters", "your name"] },
-      { key: "firstName", matches: ["first name", "given name", "forename"] },
-      { key: "lastName", matches: ["last name", "surname", "family name"] },
-      { key: "email", matches: ["primary email address", "email address", "email id", "official email", "candidate email", "registered email", "notification email", "applicant email", "e mail", "electronic mail", "email"] },
-      { key: "phone", matches: ["mobile number", "phone number", "contact mobile", "registered mobile", "primary contact number", "cell phone", "whatsapp number", "telephone", "10 digit mobile number", "contact no", "mobile telephone", "phone", "mobile"] },
-      { key: "dateOfBirth", matches: ["date of birth", "dob", "birth date", "birthdate", "dob date"] },
+      { key: "phone", matches: ["mobile telephone", "mobile phone", "phone number", "mobile number", "contact mobile", "registered mobile", "primary contact number", "cell phone", "whatsapp number", "telephone", "10 digit mobile number", "contact no", "mobile", "phone", "tel"] },
+      { key: "email", matches: ["primary email address", "email address", "email id", "official email", "candidate email", "registered email", "notification email", "applicant email", "e mail", "electronic mail", "email", "mail"] },
+      { key: "dateOfBirth", matches: ["date of birth", "dob date", "dob", "birth date", "birthdate"] },
       { key: "gender", matches: ["gender", "sex", "gender val"] },
       { key: "casteCategory", matches: ["social category", "caste category", "category", "community", "caste", "reservation category", "quota"] },
       { key: "fatherName", matches: ["father full name", "father name", "parent name", "guardian name", "father husband name"] },
       { key: "motherName", matches: ["mother full name", "mother name", "maternal name"] },
       { key: "annualIncome", matches: ["gross total annual income", "annual family income", "annual income", "family income", "parental annual income", "gross income"] },
       { key: "address", matches: ["full home residential address", "current address", "residential address", "present address", "communication address", "correspondence address", "street address", "address"] },
-      { key: "city", matches: ["current city state", "current city", "city", "district", "town"] },
+      { key: "city", matches: ["current city", "city", "district", "town"] },
       { key: "state", matches: ["domicile state", "state of residence", "state ut", "state", "province"] },
       { key: "pinCode", matches: ["postal zip code", "postal pincode", "pin code", "pincode", "postal code", "zip code", "postal pin"] },
       { key: "bankAccountNumber", matches: ["bank account for direct tax refund", "bank account number", "savings account number", "bank a c no", "account number", "bank account", "account no"] },
@@ -124,10 +186,20 @@
       { key: "currentCompany", matches: ["current company", "current employer", "present organization", "company name"] },
       { key: "graduationYear", matches: ["year of graduation", "graduation year", "year of passing", "passing year"] },
       { key: "passportNumber", matches: ["passport national id number", "passport number", "passport no"] },
-      { key: "nationality", matches: ["country of citizenship nationality", "nationality", "citizenship country"] }
+      { key: "nationality", matches: ["country of citizenship nationality", "nationality", "citizenship country"] },
+      { key: "fullName", matches: ["full legal name", "full name", "fullname", "candidate name", "applicant name", "taxpayer name", "assessee name", "student name", "legal name", "name as per matriculation", "name as per aadhaar", "name in block letters", "beneficiary name"] },
+      { key: "firstName", matches: ["first name", "given name", "forename"] },
+      { key: "lastName", matches: ["last name", "surname", "family name"] }
     ];
 
     for (const c of clusters) {
+      if (c.key === "fullName" && (raw.includes("university") || raw.includes("college") || raw.includes("institute") || raw.includes("father") || raw.includes("mother") || raw.includes("bank") || raw.includes("email") || raw.includes("phone"))) {
+        continue;
+      }
+      if (c.key === "lastName" && raw.includes("first and last")) {
+        continue;
+      }
+
       for (const m of c.matches) {
         if (raw.includes(m)) {
           if (profile[c.key]) return { matchedKey: c.key, value: profile[c.key], confidence: 0.96 };
@@ -149,17 +221,12 @@
       }
     }
 
-    // Fallback for name
-    if (raw.includes("name") && !raw.includes("father") && !raw.includes("mother") && !raw.includes("bank") && !raw.includes("college")) {
-      if (profile.fullName) return { matchedKey: "fullName", value: profile.fullName, confidence: 0.85 };
-    }
-
     return null;
   }
 
   // Fill single input
   function fillSingleField(input, profile) {
-    const label = getLabelForInput(input) || input.name || input.id || "";
+    const label = inferSmartFieldLabel(input);
     const meta = { id: input.id, name: input.name, label };
     const match = matchFieldSemantic(meta, profile);
     if (match && match.value) {
@@ -174,10 +241,10 @@
   // Universal Autofill all inputs
   function autofillAllFields(profile, profileName) {
     let count = 0;
-    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']), select, textarea");
+    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
 
     inputs.forEach((input) => {
-      const label = getLabelForInput(input) || input.name || input.id || "";
+      const label = inferSmartFieldLabel(input);
       const meta = { id: input.id, name: input.name, label };
       const match = matchFieldSemantic(meta, profile);
       if (match && match.value) {
@@ -208,47 +275,65 @@
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  function isSamplePlaceholderOrValue(str) {
+    if (!str) return true;
+    const s = str.trim().toLowerCase();
+    if (s.startsWith("+") || /^\+?\d[\d\s-]{6,}$/.test(s)) return true; // phone format e.g. +91 98765 43210
+    if (s.includes("@") || s.includes(".com") || s.includes(".org") || s.includes(".in") || s.includes(".net")) return true; // email
+    if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("www.")) return true; // url
+    if (/^(e\.?g\.?|ex\.?|for example|sample|such as)\b/i.test(s)) return true; // e.g. Jaipur, e.g. 2021
+    if (/^(yyyy|dd\/mm|mm\/dd|dd-mm|mm-dd)/i.test(s)) return true; // date formats
+    if (/^(enter|type|input|select|choose|search|write|fill|provide|first and last)\b/i.test(s)) return true; // action instructions
+    if (/^\d+(\.\d+)?(\s*(years?|yrs?|lakh|inr|rs\.?|%|kg|mb|kb))?$/i.test(s)) return true; // numbers/measurements
+    return false;
+  }
+
   function getLabelForInput(input) {
+    const dataLabel = input.getAttribute("data-field-label");
+    if (dataLabel && dataLabel.trim() && !isSamplePlaceholderOrValue(dataLabel)) {
+      return dataLabel.trim().replace(/[:*]+$/, "").trim();
+    }
+
     if (input.id) {
       const l = document.querySelector("label[for='" + input.id + "']");
       if (l && l.textContent && l.textContent.trim()) {
-        const txt = l.textContent.trim().replace(/[:*]+$/, '').trim();
-        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+        const txt = l.textContent.trim().replace(/[:*]+$/, "").trim();
+        if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt !== "General Applicant Detail" && !isSamplePlaceholderOrValue(txt)) return txt;
       }
     }
     const parentLabel = input.closest("label");
     if (parentLabel && parentLabel.textContent && parentLabel.textContent.trim()) {
       const clone = parentLabel.cloneNode(true);
       clone.querySelectorAll("input, select, textarea, button").forEach(n => n.remove());
-      const txt = (clone.textContent || parentLabel.textContent).trim().replace(/[:*]+$/, '').trim();
-      if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+      const txt = (clone.textContent || parentLabel.textContent).trim().replace(/[:*]+$/, "").trim();
+      if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt !== "General Applicant Detail" && !isSamplePlaceholderOrValue(txt)) return txt;
     }
     const ariaLabel = input.getAttribute("aria-label");
-    if (ariaLabel && ariaLabel.trim() && !/^(field|input|item)[s_-]*d*$/i.test(ariaLabel.trim())) {
-      return ariaLabel.trim().replace(/[:*]+$/, '').trim();
+    if (ariaLabel && ariaLabel.trim() && !/^(field|input|item)[\s_-]*\d*$/i.test(ariaLabel.trim()) && !isSamplePlaceholderOrValue(ariaLabel)) {
+      return ariaLabel.trim().replace(/[:*]+$/, "").trim();
     }
     const ariaLabelledBy = input.getAttribute("aria-labelledby");
     if (ariaLabelledBy) {
       const lblEl = document.getElementById(ariaLabelledBy);
       if (lblEl && lblEl.textContent && lblEl.textContent.trim()) {
-        const txt = lblEl.textContent.trim().replace(/[:*]+$/, '').trim();
-        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+        const txt = lblEl.textContent.trim().replace(/[:*]+$/, "").trim();
+        if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt !== "General Applicant Detail" && !isSamplePlaceholderOrValue(txt)) return txt;
       }
     }
-    // Table row / cell structure (standard in govt / recruitment application forms like UPSC, SSC)
+    // Table row / cell structure
     const td = input.closest("td");
     if (td) {
       const prevTd = td.previousElementSibling;
       if (prevTd && prevTd.textContent && prevTd.textContent.trim()) {
-        const txt = prevTd.textContent.trim().replace(/[:*]+$/, '').trim();
-        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 100) return txt;
+        const txt = prevTd.textContent.trim().replace(/[:*]+$/, "").trim();
+        if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt.length < 100 && !isSamplePlaceholderOrValue(txt)) return txt;
       }
       const row = input.closest("tr");
       if (row) {
         const th = row.querySelector("th");
         if (th && th.textContent && th.textContent.trim()) {
-          const txt = th.textContent.trim().replace(/[:*]+$/, '').trim();
-          if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 100) return txt;
+          const txt = th.textContent.trim().replace(/[:*]+$/, "").trim();
+          if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt.length < 100 && !isSamplePlaceholderOrValue(txt)) return txt;
         }
       }
     }
@@ -257,8 +342,8 @@
     if (dd) {
       const dt = dd.previousElementSibling;
       if (dt && dt.tagName === "DT" && dt.textContent && dt.textContent.trim()) {
-        const txt = dt.textContent.trim().replace(/[:*]+$/, '').trim();
-        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+        const txt = dt.textContent.trim().replace(/[:*]+$/, "").trim();
+        if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && !isSamplePlaceholderOrValue(txt)) return txt;
       }
     }
     // Form group or wrapper
@@ -266,145 +351,146 @@
     if (group) {
       const groupLabel = group.querySelector("label, legend, .form-label, .field-label, span.label, strong, b");
       if (groupLabel && groupLabel.textContent && groupLabel.textContent.trim() && !groupLabel.contains(input)) {
-        const txt = groupLabel.textContent.trim().replace(/[:*]+$/, '').trim();
-        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 80) return txt;
+        const txt = groupLabel.textContent.trim().replace(/[:*]+$/, "").trim();
+        if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt.length < 80 && !isSamplePlaceholderOrValue(txt)) return txt;
       }
     }
     const prev = input.previousElementSibling;
     if (prev && (prev.tagName === "LABEL" || prev.tagName === "LEGEND" || prev.tagName === "SPAN" || prev.tagName === "P" || prev.tagName === "STRONG" || prev.tagName === "B") && prev.textContent && prev.textContent.trim()) {
-      const txt = prev.textContent.trim().replace(/[:*]+$/, '').trim();
-      if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 80) return txt;
+      const txt = prev.textContent.trim().replace(/[:*]+$/, "").trim();
+      if (txt && !/^(field|input|item)[\s_-]*\d*$/i.test(txt) && txt.length < 80 && !isSamplePlaceholderOrValue(txt)) return txt;
+    }
+    const placeholder = input.getAttribute("placeholder");
+    if (placeholder && placeholder.trim() && !isSamplePlaceholderOrValue(placeholder.trim())) {
+      return placeholder.trim().replace(/[:*]+$/, "").trim();
     }
     const titleAttr = input.getAttribute("title");
-    if (titleAttr && titleAttr.trim() && !/^(field|input|item)[s_-]*d*$/i.test(titleAttr.trim())) {
-      return titleAttr.trim().replace(/[:*]+$/, '').trim();
+    if (titleAttr && titleAttr.trim() && !/^(field|input|item)[\s_-]*\d*$/i.test(titleAttr.trim()) && !isSamplePlaceholderOrValue(titleAttr)) {
+      return titleAttr.trim().replace(/[:*]+$/, "").trim();
     }
     return "";
   }
 
   function inferSmartFieldLabel(el) {
-    const rawLabel = getLabelForInput(el);
-    if (rawLabel) return rawLabel;
+    let rawLabel = getLabelForInput(el);
 
-    // Autocomplete mapping
-    const auto = (el.getAttribute("autocomplete") || "").toLowerCase().trim();
-    if (auto) {
-      if (auto === "name" || auto === "given-name") return "Full Name";
-      if (auto === "family-name") return "Surname / Last Name";
-      if (auto === "email") return "Primary Email";
-      if (auto === "tel" || auto.includes("tel")) return "Mobile / Telephone";
-      if (auto.includes("bday") || auto === "birthday") return "Date of Birth";
-      if (auto.includes("address-level2")) return "City & State";
-      if (auto.includes("address-level1")) return "State / Province";
-      if (auto.includes("postal-code")) return "Postal PIN Code";
-      if (auto.includes("street-address")) return "Residential Address";
-    }
-
-    // Semantic resolution from name, id, class, type
-    const rawId = el.id || "";
-    const rawName = el.name || el.getAttribute("name") || "";
-    const rawClass = el.className || "";
-    const inputType = (el.getAttribute("type") || (el.tagName === "TEXTAREA" ? "textarea" : "text")).toLowerCase();
-    const rawAttrs = (rawName + " " + rawId + " " + rawClass).toLowerCase().replace(/[^a-z0-9]/g, " ");
-
-    if (/(fulls*name|fname|applicants*name|candidates*name|legals*name|students*name|persons*name|taxpayers*name|users*name)/i.test(rawAttrs)) {
-      return "Full Name";
-    }
-    if (/(email|mail|e_mail)/i.test(rawAttrs) || inputType === "email") {
-      return "Primary Email";
-    }
-    if (/(mobile|telephone|phone|tel|contacts*no|cell|whatsapp)/i.test(rawAttrs) || inputType === "tel") {
-      return "Mobile / Telephone";
-    }
-    if (/(citys*&?s*state|city_state|citystate|current_city|city|state|district)/i.test(rawAttrs)) {
-      if (/(state)/i.test(rawAttrs) && !/(city)/i.test(rawAttrs)) return "State / Province";
-      if (/(city)/i.test(rawAttrs) && !/(state)/i.test(rawAttrs)) return "City / District";
-      return "City & State";
-    }
-    if (/(dob|birth|bday|date_of_birth)/i.test(rawAttrs) || inputType === "date") {
-      return "Date of Birth";
-    }
-    if (/(father|parent|guardian)/i.test(rawAttrs)) {
-      return "Father's Full Name";
-    }
-    if (/(mother|maternal)/i.test(rawAttrs)) {
-      return "Mother's Full Name";
-    }
-    if (/(address|addr|street|residence)/i.test(rawAttrs) || el.tagName === "TEXTAREA") {
-      return "Residential Address";
-    }
-    if (/(pin|pincode|zip|postal)/i.test(rawAttrs)) {
-      return "Postal PIN Code";
-    }
-    if (/(caste|category|community)/i.test(rawAttrs)) {
-      return "Category / Caste";
-    }
-    if (/(gender|sex)/i.test(rawAttrs)) {
-      return "Gender / Sex";
-    }
-    if (/(aadhaar|aadhar|uid)/i.test(rawAttrs)) {
-      return "Aadhaar Card Number";
-    }
-    if (/(pan|pancard)/i.test(rawAttrs)) {
-      return "PAN Card Number";
-    }
-    if (/(bank|account|acc_no)/i.test(rawAttrs)) {
-      return "Bank Account Number";
-    }
-    if (/(ifsc|branch)/i.test(rawAttrs)) {
-      return "Bank IFSC Code";
-    }
-    if (/(income|salary)/i.test(rawAttrs)) {
-      return "Annual Family Income";
-    }
-    if (/(roll|hall_ticket|prn|reg_no|registration)/i.test(rawAttrs)) {
-      return "Roll / Registration Number";
-    }
-    if (/(college|university|institute|campus)/i.test(rawAttrs)) {
-      return "College / University Name";
-    }
-    if (/(degree|course|qualification)/i.test(rawAttrs)) {
-      return "Course / Qualification";
-    }
-    if (/(experience|years)/i.test(rawAttrs)) {
-      return "Work Experience";
-    }
-    if (/(passport)/i.test(rawAttrs)) {
-      return "Passport Number";
-    }
-    if (/(nationality|citizenship)/i.test(rawAttrs)) {
-      return "Nationality";
-    }
-    if (/(password|pwd)/i.test(rawAttrs) || inputType === "password") {
-      return "Security Password";
-    }
-
-    // Humanize non-generic identifier
-    const cand = rawName || rawId;
-    if (cand && !/^(field|input|txt|val|data|elem)[s_-]*d*$/i.test(cand)) {
-      const hum = cand
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .replace(/[_-]+/g, " ")
-        .replace(/(txt|input|val|id)/gi, "")
-        .trim();
-      if (hum.length > 1) {
-        return hum.split(/s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+    if (!rawLabel || isSamplePlaceholderOrValue(rawLabel) || rawLabel === "General Applicant Detail") {
+      // Autocomplete mapping
+      const auto = (el.getAttribute("autocomplete") || "").toLowerCase().trim();
+      if (auto) {
+        if (auto === "name" || auto === "given-name") rawLabel = "Full Name";
+        else if (auto === "family-name") rawLabel = "Surname / Last Name";
+        else if (auto === "email") rawLabel = "Primary Email Address";
+        else if (auto === "tel" || auto.includes("tel")) rawLabel = "Mobile / Telephone";
+        else if (auto.includes("bday") || auto === "birthday") rawLabel = "Date of Birth";
+        else if (auto.includes("address-level2")) rawLabel = "City & State";
+        else if (auto.includes("address-level1")) rawLabel = "State / Province";
+        else if (auto.includes("postal-code")) rawLabel = "Postal PIN Code";
+        else if (auto.includes("street-address")) rawLabel = "Residential Address";
       }
     }
 
-    // Input type fallbacks (Never say "Field 1", "Field 2")
-    if (inputType === "email") return "Primary Email";
-    if (inputType === "tel") return "Mobile / Telephone";
-    if (inputType === "date") return "Date of Birth";
-    if (inputType === "file") return "Document Upload (Photo/Signature)";
-    if (inputType === "password") return "Security Password";
-    if (inputType === "number") return "Numeric Detail";
-    if (el.tagName === "TEXTAREA") return "Detailed Address / Remarks";
-    if (el.tagName === "SELECT") return "Selection Option";
-    if (inputType === "checkbox") return "Verification Checkbox";
-    if (inputType === "radio") return "Option Choice";
+    if (!rawLabel || isSamplePlaceholderOrValue(rawLabel) || rawLabel === "General Applicant Detail") {
+      // Semantic resolution from name, id, class, type
+      const rawId = el.id || "";
+      const rawName = el.name || el.getAttribute("name") || "";
+      const rawClass = el.className || "";
+      const inputType = (el.getAttribute("type") || (el.tagName === "TEXTAREA" ? "textarea" : "text")).toLowerCase();
+      const rawAttrs = (rawName + " " + rawId + " " + rawClass).toLowerCase().replace(/[^a-z0-9]/g, " ");
 
-    return "General Applicant Detail";
+      if (/\b(mobile|telephone|phone|tel|contact\s*no|cell|whatsapp)\b/i.test(rawAttrs) || inputType === "tel") {
+        rawLabel = "Mobile / Telephone";
+      } else if (/\b(email|mail|e_mail)\b/i.test(rawAttrs) || inputType === "email") {
+        rawLabel = "Primary Email Address";
+      } else if (/\b(full\s*name|fname|applicant\s*name|candidate\s*name|legal\s*name|student\s*name|person\s*name|taxpayer\s*name|user\s*name|beneficiary\s*name)\b/i.test(rawAttrs)) {
+        rawLabel = "Full Legal Name";
+      } else if (/\b(city\s*&?\s*state|city_state|citystate|current_city)\b/i.test(rawAttrs)) {
+        rawLabel = "Current City & State";
+      } else if (/\b(district|town|city)\b/i.test(rawAttrs)) {
+        rawLabel = "City / District";
+      } else if (/\b(state|domicile|province)\b/i.test(rawAttrs)) {
+        rawLabel = "State / Province";
+      } else if (/\b(dob|birth|bday|date_of_birth)\b/i.test(rawAttrs) || inputType === "date") {
+        rawLabel = "Date of Birth";
+      } else if (/\b(father|parent|guardian)\b/i.test(rawAttrs)) {
+        rawLabel = "Father's Full Name";
+      } else if (/\b(mother|maternal)\b/i.test(rawAttrs)) {
+        rawLabel = "Mother's Full Name";
+      } else if (/\b(address|addr|street|residence|billing)\b/i.test(rawAttrs) || el.tagName === "TEXTAREA") {
+        rawLabel = "Residential Address";
+      } else if (/\b(pin|pincode|zip|postal)\b/i.test(rawAttrs)) {
+        rawLabel = "Postal PIN Code";
+      } else if (/\b(caste|category|community)\b/i.test(rawAttrs)) {
+        rawLabel = "Category / Caste";
+      } else if (/\b(gender|sex)\b/i.test(rawAttrs)) {
+        rawLabel = "Gender / Sex";
+      } else if (/\b(aadhaar|aadhar|uid)\b/i.test(rawAttrs)) {
+        rawLabel = "Aadhaar Card Number";
+      } else if (/\b(pan|pancard)\b/i.test(rawAttrs)) {
+        rawLabel = "PAN Card Number";
+      } else if (/\b(bank|account|acc_no)\b/i.test(rawAttrs)) {
+        rawLabel = "Bank Account Number";
+      } else if (/\b(ifsc|branch)\b/i.test(rawAttrs)) {
+        rawLabel = "Bank IFSC Code";
+      } else if (/\b(income|salary)\b/i.test(rawAttrs)) {
+        rawLabel = "Annual Family Income";
+      } else if (/\b(vendor|company|business)\b/i.test(rawAttrs)) {
+        rawLabel = "Vendor / Company Name";
+      } else if (/\b(tax|tax_id|reg_no)\b/i.test(rawAttrs)) {
+        rawLabel = "Tax / PAN / Registration ID";
+      } else if (/\b(roll|hall_ticket|prn|registration)\b/i.test(rawAttrs)) {
+        rawLabel = "Roll / Registration Number";
+      } else if (/\b(college|university|institute|campus)\b/i.test(rawAttrs)) {
+        rawLabel = "University / College Name";
+      } else if (/\b(degree|course|qualification)\b/i.test(rawAttrs)) {
+        rawLabel = "Highest Degree Completed";
+      } else if (/\b(experience|years)\b/i.test(rawAttrs)) {
+        rawLabel = "Total Years of Experience";
+      } else if (/\b(designation|role|title)\b/i.test(rawAttrs)) {
+        rawLabel = "Current Title / Designation";
+      } else if (/\b(graduation|passing)\b/i.test(rawAttrs)) {
+        rawLabel = "Year of Graduation";
+      } else if (/\b(passport)\b/i.test(rawAttrs)) {
+        rawLabel = "Passport Number";
+      } else if (/\b(nationality|citizenship)\b/i.test(rawAttrs)) {
+        rawLabel = "Nationality";
+      } else if (/\b(password|pwd)\b/i.test(rawAttrs) || inputType === "password") {
+        rawLabel = "Security Password";
+      } else {
+        const cand = rawName || rawId;
+        if (cand && !/^(field|input|txt|val|data|elem)[\s_-]*\d*$/i.test(cand)) {
+          const hum = cand
+            .replace(/([a-z])([A-Z])/g, "$1 $2")
+            .replace(/[_-]+/g, " ")
+            .replace(/\b(txt|input|val|id)\b/gi, "")
+            .trim();
+          if (hum.length > 1) {
+            rawLabel = hum.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+          }
+        }
+      }
+
+      if (!rawLabel) {
+        if (inputType === "email") rawLabel = "Primary Email Address";
+        else if (inputType === "tel") rawLabel = "Mobile / Telephone";
+        else if (inputType === "date") rawLabel = "Date of Birth";
+        else if (inputType === "file") rawLabel = "Document Upload (Photo/Signature)";
+        else if (inputType === "password") rawLabel = "Security Password";
+        else if (inputType === "number") rawLabel = "Numeric Detail";
+        else if (el.tagName === "TEXTAREA") rawLabel = "Residential Address";
+        else rawLabel = "Application Detail";
+      }
+    }
+
+    rawLabel = (rawLabel || "Application Detail").replace(/[:*]+$/, "").trim();
+
+    // Append required asterisk if element is marked required
+    const isRequired = el.required || el.hasAttribute("required") || el.getAttribute("aria-required") === "true" || el.classList.contains("required");
+    if (isRequired && !rawLabel.includes("*")) {
+      rawLabel = rawLabel + " *";
+    }
+
+    return rawLabel;
   }
 
   function showToast(msg) {

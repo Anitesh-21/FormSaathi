@@ -1,0 +1,476 @@
+// FormSaathi AI - Universal Webpage Form Scanner & Assisted Autofiller
+(function () {
+  console.log("FormSaathi AI Universal Extension injected on:", window.location.href);
+
+  // 1. Create floating FormSaathi button on the page
+  function injectFloatingDock() {
+    if (document.getElementById("formsaathi-floating-dock")) return;
+
+    const dock = document.createElement("div");
+    dock.id = "formsaathi-floating-dock";
+    dock.title = "FormSaathi AI: Click to Autofill this form";
+    dock.innerHTML = `
+      <span class="formsaathi-pulse-dot"></span>
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: -0.2px;">✨ FormSaathi Autofill</span>
+    `;
+
+    dock.addEventListener("click", () => {
+      // Trigger autofill using stored profile
+      chrome.storage.local.get(["formsaathi_active_profile_data", "formsaathi_active_profile_name"], (res) => {
+        const profile = res.formsaathi_active_profile_data || getDefaultProfile();
+        const profName = res.formsaathi_active_profile_name || "Personal & Academic";
+        autofillAllFields(profile, profName);
+      });
+    });
+
+    document.body.appendChild(dock);
+  }
+
+  // 2. Attach helpers to inputs
+  function attachFieldHelpers() {
+    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']), select, textarea");
+    inputs.forEach((input) => {
+      if (input.dataset.formSaathiAttached) return;
+      input.dataset.formSaathiAttached = "true";
+
+      // Relative positioning container check
+      const parent = input.parentElement;
+      if (parent && getComputedStyle(parent).position === "static") {
+        parent.style.position = "relative";
+      }
+
+      // Add small helper button
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "formsaathi-field-badge";
+      badge.innerHTML = "✨ Fill";
+      badge.title = "FormSaathi: Explain or Autofill this field";
+
+      badge.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        chrome.storage.local.get(["formsaathi_active_profile_data"], (res) => {
+          const profile = res.formsaathi_active_profile_data || getDefaultProfile();
+          fillSingleField(input, profile);
+        });
+      });
+
+      if (parent) {
+        parent.appendChild(badge);
+      }
+    });
+  }
+
+  // Fallback profile if storage empty
+  function getDefaultProfile() {
+    return {
+      fullName: "Anitesh Kumar Singh",
+      firstName: "Anitesh",
+      lastName: "Singh",
+      email: "aniteshks21@gmail.com",
+      phone: "9876543210",
+      dateOfBirth: "2004-09-15",
+      gender: "Male",
+      fatherName: "Suresh Kumar Singh",
+      motherName: "Sunita Singh",
+      address: "House No. 42, Sector 14, Jaipur, Rajasthan",
+      city: "Jaipur",
+      state: "Rajasthan",
+      pinCode: "302022",
+      tenthRollNo: "14102984",
+      tenthPercentage: "92.4%",
+      twelfthRollNo: "22140938",
+      twelfthPercentage: "89.6%",
+      bankAccountNumber: "309811245678",
+      ifscCode: "SBIN0004521",
+      panNumber: "ABCPS1234F"
+    };
+  }
+
+  // 3. Intelligent Semantic & Fuzzy Matcher
+  function matchFieldSemantic(field, profile) {
+    const raw = ((field.label || "") + " " + (field.name || "") + " " + (field.id || "")).toLowerCase().replace(/[^a-z0-9]/g, " ");
+
+    const clusters = [
+      { key: "fullName", matches: ["full legal name", "fullname", "full name", "candidate name", "applicant name", "taxpayer name", "assessee name", "student name", "legal name", "name as per matriculation", "name as per aadhaar", "name in block letters", "your name"] },
+      { key: "firstName", matches: ["first name", "given name", "forename"] },
+      { key: "lastName", matches: ["last name", "surname", "family name"] },
+      { key: "email", matches: ["primary email address", "email address", "email id", "official email", "candidate email", "registered email", "notification email", "applicant email", "e mail", "electronic mail", "email"] },
+      { key: "phone", matches: ["mobile number", "phone number", "contact mobile", "registered mobile", "primary contact number", "cell phone", "whatsapp number", "telephone", "10 digit mobile number", "contact no", "mobile telephone", "phone", "mobile"] },
+      { key: "dateOfBirth", matches: ["date of birth", "dob", "birth date", "birthdate", "dob date"] },
+      { key: "gender", matches: ["gender", "sex", "gender val"] },
+      { key: "casteCategory", matches: ["social category", "caste category", "category", "community", "caste", "reservation category", "quota"] },
+      { key: "fatherName", matches: ["father full name", "father name", "parent name", "guardian name", "father husband name"] },
+      { key: "motherName", matches: ["mother full name", "mother name", "maternal name"] },
+      { key: "annualIncome", matches: ["gross total annual income", "annual family income", "annual income", "family income", "parental annual income", "gross income"] },
+      { key: "address", matches: ["full home residential address", "current address", "residential address", "present address", "communication address", "correspondence address", "street address", "address"] },
+      { key: "city", matches: ["current city state", "current city", "city", "district", "town"] },
+      { key: "state", matches: ["domicile state", "state of residence", "state ut", "state", "province"] },
+      { key: "pinCode", matches: ["postal zip code", "postal pincode", "pin code", "pincode", "postal code", "zip code", "postal pin"] },
+      { key: "bankAccountNumber", matches: ["bank account for direct tax refund", "bank account number", "savings account number", "bank a c no", "account number", "bank account", "account no"] },
+      { key: "ifscCode", matches: ["branch ifsc code", "bank ifsc code", "bank ifsc", "branch ifsc", "ifsc code", "ifsc"] },
+      { key: "panNumber", matches: ["permanent account number pan", "permanent account number", "pan card no", "pan card number", "pan card", "pan number", "pan"] },
+      { key: "tenthRollNo", matches: ["10th roll no", "10th roll number", "matric roll no", "class x roll no", "secondary exam roll number"] },
+      { key: "tenthPercentage", matches: ["10th percentage", "10th marks", "matric percentage", "class x percentage"] },
+      { key: "tenthBoard", matches: ["10th board", "matric board", "secondary education board"] },
+      { key: "twelfthRollNo", matches: ["12th roll no", "12th roll number", "intermediate roll no", "class xii roll no"] },
+      { key: "twelfthPercentage", matches: ["12th percentage", "12th marks", "intermediate percentage"] },
+      { key: "currentCourse", matches: ["highest degree completed", "current course", "enrolled course", "degree program", "course name", "degree", "qualification"] },
+      { key: "instituteName", matches: ["university college name", "college name", "university name", "institute name", "institution", "college", "university"] },
+      { key: "rollNo", matches: ["college roll number", "enrollment number", "registration number", "prn number", "hall ticket number"] },
+      { key: "highestQualification", matches: ["highest qualification", "highest degree completed", "educational qualification"] },
+      { key: "experienceYears", matches: ["total years of experience", "experience years", "years of experience", "total work experience"] },
+      { key: "currentRole", matches: ["current title designation", "designation", "job role", "current role"] },
+      { key: "currentCompany", matches: ["current company", "current employer", "present organization", "company name"] },
+      { key: "graduationYear", matches: ["year of graduation", "graduation year", "year of passing", "passing year"] },
+      { key: "passportNumber", matches: ["passport national id number", "passport number", "passport no"] },
+      { key: "nationality", matches: ["country of citizenship nationality", "nationality", "citizenship country"] }
+    ];
+
+    for (const c of clusters) {
+      for (const m of c.matches) {
+        if (raw.includes(m)) {
+          if (profile[c.key]) return { matchedKey: c.key, value: profile[c.key], confidence: 0.96 };
+          for (const [pk, pv] of Object.entries(profile)) {
+            if (pk.toLowerCase() === c.key.toLowerCase() && pv) {
+              return { matchedKey: pk, value: pv, confidence: 0.94 };
+            }
+          }
+        }
+      }
+    }
+
+    // Direct key substring match
+    for (const [k, v] of Object.entries(profile)) {
+      if (!v) continue;
+      const kLower = k.toLowerCase();
+      if (raw.includes(kLower)) {
+        return { matchedKey: k, value: v, confidence: 0.88 };
+      }
+    }
+
+    // Fallback for name
+    if (raw.includes("name") && !raw.includes("father") && !raw.includes("mother") && !raw.includes("bank") && !raw.includes("college")) {
+      if (profile.fullName) return { matchedKey: "fullName", value: profile.fullName, confidence: 0.85 };
+    }
+
+    return null;
+  }
+
+  // Fill single input
+  function fillSingleField(input, profile) {
+    const label = getLabelForInput(input) || input.name || input.id || "";
+    const meta = { id: input.id, name: input.name, label };
+    const match = matchFieldSemantic(meta, profile);
+    if (match && match.value) {
+      setNativeValue(input, String(match.value));
+      input.classList.add("formsaathi-autofilled-highlight");
+      showToast("✨ FormSaathi filled " + (match.matchedKey || label) + " = " + match.value);
+    } else {
+      showToast("No direct match found in active vault for this field.");
+    }
+  }
+
+  // Universal Autofill all inputs
+  function autofillAllFields(profile, profileName) {
+    let count = 0;
+    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']), select, textarea");
+
+    inputs.forEach((input) => {
+      const label = getLabelForInput(input) || input.name || input.id || "";
+      const meta = { id: input.id, name: input.name, label };
+      const match = matchFieldSemantic(meta, profile);
+      if (match && match.value) {
+        setNativeValue(input, String(match.value));
+        input.classList.add("formsaathi-autofilled-highlight");
+        count++;
+      }
+    });
+
+    showToast("✨ FormSaathi autofilled " + count + " fields from " + profileName + "!");
+  }
+
+  // React/Angular/Vue compatible input dispatcher
+  function setNativeValue(element, value) {
+    const valueSetter = Object.getOwnPropertyDescriptor(element.__proto__, "value")?.set;
+    const prototype = Object.getPrototypeOf(element);
+    const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+
+    if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+      prototypeValueSetter.call(element, value);
+    } else if (valueSetter) {
+      valueSetter.call(element, value);
+    } else {
+      element.value = value;
+    }
+
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function getLabelForInput(input) {
+    if (input.id) {
+      const l = document.querySelector("label[for='" + input.id + "']");
+      if (l && l.textContent && l.textContent.trim()) {
+        const txt = l.textContent.trim().replace(/[:*]+$/, '').trim();
+        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+      }
+    }
+    const parentLabel = input.closest("label");
+    if (parentLabel && parentLabel.textContent && parentLabel.textContent.trim()) {
+      const clone = parentLabel.cloneNode(true);
+      clone.querySelectorAll("input, select, textarea, button").forEach(n => n.remove());
+      const txt = (clone.textContent || parentLabel.textContent).trim().replace(/[:*]+$/, '').trim();
+      if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+    }
+    const ariaLabel = input.getAttribute("aria-label");
+    if (ariaLabel && ariaLabel.trim() && !/^(field|input|item)[s_-]*d*$/i.test(ariaLabel.trim())) {
+      return ariaLabel.trim().replace(/[:*]+$/, '').trim();
+    }
+    const ariaLabelledBy = input.getAttribute("aria-labelledby");
+    if (ariaLabelledBy) {
+      const lblEl = document.getElementById(ariaLabelledBy);
+      if (lblEl && lblEl.textContent && lblEl.textContent.trim()) {
+        const txt = lblEl.textContent.trim().replace(/[:*]+$/, '').trim();
+        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+      }
+    }
+    // Table row / cell structure (standard in govt / recruitment application forms like UPSC, SSC)
+    const td = input.closest("td");
+    if (td) {
+      const prevTd = td.previousElementSibling;
+      if (prevTd && prevTd.textContent && prevTd.textContent.trim()) {
+        const txt = prevTd.textContent.trim().replace(/[:*]+$/, '').trim();
+        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 100) return txt;
+      }
+      const row = input.closest("tr");
+      if (row) {
+        const th = row.querySelector("th");
+        if (th && th.textContent && th.textContent.trim()) {
+          const txt = th.textContent.trim().replace(/[:*]+$/, '').trim();
+          if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 100) return txt;
+        }
+      }
+    }
+    // Definition list
+    const dd = input.closest("dd");
+    if (dd) {
+      const dt = dd.previousElementSibling;
+      if (dt && dt.tagName === "DT" && dt.textContent && dt.textContent.trim()) {
+        const txt = dt.textContent.trim().replace(/[:*]+$/, '').trim();
+        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt)) return txt;
+      }
+    }
+    // Form group or wrapper
+    const group = input.closest(".form-group, .form-item, .field-wrapper, .field, .input-group, .form-row, .row, fieldset");
+    if (group) {
+      const groupLabel = group.querySelector("label, legend, .form-label, .field-label, span.label, strong, b");
+      if (groupLabel && groupLabel.textContent && groupLabel.textContent.trim() && !groupLabel.contains(input)) {
+        const txt = groupLabel.textContent.trim().replace(/[:*]+$/, '').trim();
+        if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 80) return txt;
+      }
+    }
+    const prev = input.previousElementSibling;
+    if (prev && (prev.tagName === "LABEL" || prev.tagName === "LEGEND" || prev.tagName === "SPAN" || prev.tagName === "P" || prev.tagName === "STRONG" || prev.tagName === "B") && prev.textContent && prev.textContent.trim()) {
+      const txt = prev.textContent.trim().replace(/[:*]+$/, '').trim();
+      if (txt && !/^(field|input|item)[s_-]*d*$/i.test(txt) && txt.length < 80) return txt;
+    }
+    const titleAttr = input.getAttribute("title");
+    if (titleAttr && titleAttr.trim() && !/^(field|input|item)[s_-]*d*$/i.test(titleAttr.trim())) {
+      return titleAttr.trim().replace(/[:*]+$/, '').trim();
+    }
+    return "";
+  }
+
+  function inferSmartFieldLabel(el) {
+    const rawLabel = getLabelForInput(el);
+    if (rawLabel) return rawLabel;
+
+    // Autocomplete mapping
+    const auto = (el.getAttribute("autocomplete") || "").toLowerCase().trim();
+    if (auto) {
+      if (auto === "name" || auto === "given-name") return "Full Name";
+      if (auto === "family-name") return "Surname / Last Name";
+      if (auto === "email") return "Primary Email";
+      if (auto === "tel" || auto.includes("tel")) return "Mobile / Telephone";
+      if (auto.includes("bday") || auto === "birthday") return "Date of Birth";
+      if (auto.includes("address-level2")) return "City & State";
+      if (auto.includes("address-level1")) return "State / Province";
+      if (auto.includes("postal-code")) return "Postal PIN Code";
+      if (auto.includes("street-address")) return "Residential Address";
+    }
+
+    // Semantic resolution from name, id, class, type
+    const rawId = el.id || "";
+    const rawName = el.name || el.getAttribute("name") || "";
+    const rawClass = el.className || "";
+    const inputType = (el.getAttribute("type") || (el.tagName === "TEXTAREA" ? "textarea" : "text")).toLowerCase();
+    const rawAttrs = (rawName + " " + rawId + " " + rawClass).toLowerCase().replace(/[^a-z0-9]/g, " ");
+
+    if (/(fulls*name|fname|applicants*name|candidates*name|legals*name|students*name|persons*name|taxpayers*name|users*name)/i.test(rawAttrs)) {
+      return "Full Name";
+    }
+    if (/(email|mail|e_mail)/i.test(rawAttrs) || inputType === "email") {
+      return "Primary Email";
+    }
+    if (/(mobile|telephone|phone|tel|contacts*no|cell|whatsapp)/i.test(rawAttrs) || inputType === "tel") {
+      return "Mobile / Telephone";
+    }
+    if (/(citys*&?s*state|city_state|citystate|current_city|city|state|district)/i.test(rawAttrs)) {
+      if (/(state)/i.test(rawAttrs) && !/(city)/i.test(rawAttrs)) return "State / Province";
+      if (/(city)/i.test(rawAttrs) && !/(state)/i.test(rawAttrs)) return "City / District";
+      return "City & State";
+    }
+    if (/(dob|birth|bday|date_of_birth)/i.test(rawAttrs) || inputType === "date") {
+      return "Date of Birth";
+    }
+    if (/(father|parent|guardian)/i.test(rawAttrs)) {
+      return "Father's Full Name";
+    }
+    if (/(mother|maternal)/i.test(rawAttrs)) {
+      return "Mother's Full Name";
+    }
+    if (/(address|addr|street|residence)/i.test(rawAttrs) || el.tagName === "TEXTAREA") {
+      return "Residential Address";
+    }
+    if (/(pin|pincode|zip|postal)/i.test(rawAttrs)) {
+      return "Postal PIN Code";
+    }
+    if (/(caste|category|community)/i.test(rawAttrs)) {
+      return "Category / Caste";
+    }
+    if (/(gender|sex)/i.test(rawAttrs)) {
+      return "Gender / Sex";
+    }
+    if (/(aadhaar|aadhar|uid)/i.test(rawAttrs)) {
+      return "Aadhaar Card Number";
+    }
+    if (/(pan|pancard)/i.test(rawAttrs)) {
+      return "PAN Card Number";
+    }
+    if (/(bank|account|acc_no)/i.test(rawAttrs)) {
+      return "Bank Account Number";
+    }
+    if (/(ifsc|branch)/i.test(rawAttrs)) {
+      return "Bank IFSC Code";
+    }
+    if (/(income|salary)/i.test(rawAttrs)) {
+      return "Annual Family Income";
+    }
+    if (/(roll|hall_ticket|prn|reg_no|registration)/i.test(rawAttrs)) {
+      return "Roll / Registration Number";
+    }
+    if (/(college|university|institute|campus)/i.test(rawAttrs)) {
+      return "College / University Name";
+    }
+    if (/(degree|course|qualification)/i.test(rawAttrs)) {
+      return "Course / Qualification";
+    }
+    if (/(experience|years)/i.test(rawAttrs)) {
+      return "Work Experience";
+    }
+    if (/(passport)/i.test(rawAttrs)) {
+      return "Passport Number";
+    }
+    if (/(nationality|citizenship)/i.test(rawAttrs)) {
+      return "Nationality";
+    }
+    if (/(password|pwd)/i.test(rawAttrs) || inputType === "password") {
+      return "Security Password";
+    }
+
+    // Humanize non-generic identifier
+    const cand = rawName || rawId;
+    if (cand && !/^(field|input|txt|val|data|elem)[s_-]*d*$/i.test(cand)) {
+      const hum = cand
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .replace(/(txt|input|val|id)/gi, "")
+        .trim();
+      if (hum.length > 1) {
+        return hum.split(/s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+      }
+    }
+
+    // Input type fallbacks (Never say "Field 1", "Field 2")
+    if (inputType === "email") return "Primary Email";
+    if (inputType === "tel") return "Mobile / Telephone";
+    if (inputType === "date") return "Date of Birth";
+    if (inputType === "file") return "Document Upload (Photo/Signature)";
+    if (inputType === "password") return "Security Password";
+    if (inputType === "number") return "Numeric Detail";
+    if (el.tagName === "TEXTAREA") return "Detailed Address / Remarks";
+    if (el.tagName === "SELECT") return "Selection Option";
+    if (inputType === "checkbox") return "Verification Checkbox";
+    if (inputType === "radio") return "Option Choice";
+
+    return "General Applicant Detail";
+  }
+
+  function showToast(msg) {
+    let t = document.getElementById("formsaathi-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "formsaathi-toast";
+      t.style.cssText = "position:fixed;top:20px;right:20px;z-index:2147483647;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-family:system-ui;box-shadow:0 10px 20px rgba(0,0,0,0.2);transition:all 0.3s;border:1px solid #334155;";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = "1";
+    setTimeout(() => { t.style.opacity = "0"; }, 3500);
+  }
+
+  // Message listener from popup
+  chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+    if (req.action === "DETECT_PAGE_FIELDS") {
+      const detected = [];
+      const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
+      inputs.forEach((el, i) => {
+        const label = inferSmartFieldLabel(el);
+        detected.push({
+          index: i,
+          id: el.id || el.name || ("field_" + i),
+          name: el.name || "",
+          label: label.trim(),
+          type: el.tagName === "TEXTAREA" ? "textarea" : (el.type || "text"),
+          placeholder: el.placeholder || "",
+          required: el.required || el.hasAttribute("required") || el.getAttribute("aria-required") === "true",
+          currentValue: el.value || "",
+          hasValue: !!(el.value && el.value.trim().length > 0)
+        });
+      });
+      sendResponse({ status: "success", fields: detected, title: document.title, url: location.href });
+    } else if (req.action === "AUTOFILL_PAGE") {
+      autofillAllFields(req.profileData, req.profileName || "Active Profile");
+      sendResponse({ status: "success" });
+    } else if (req.action === "AUTOFILL_SINGLE_FIELD") {
+      const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
+      let target = null;
+      if (typeof req.index === "number" && inputs[req.index]) {
+        target = inputs[req.index];
+      } else if (req.fieldId) {
+        target = document.getElementById(req.fieldId) || document.querySelector("[name='" + req.fieldId + "']");
+      }
+      if (target && req.value !== undefined) {
+        setNativeValue(target, String(req.value));
+        target.classList.add("formsaathi-autofilled-highlight");
+        showToast("✨ FormSaathi updated field: " + req.value);
+        sendResponse({ status: "success" });
+      } else {
+        sendResponse({ status: "error", message: "Field not found" });
+      }
+    }
+    return true;
+  });
+
+  // Init
+  setTimeout(() => {
+    injectFloatingDock();
+    attachFieldHelpers();
+  }, 1000);
+
+  const observer = new MutationObserver(() => {
+    attachFieldHelpers();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();

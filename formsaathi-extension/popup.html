@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FormSaathi AI Companion</title>
+  <style>
+    :root {
+      --primary: #4338ca;
+      --primary-hover: #3730a3;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --emerald: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { width: 420px; max-height: 600px; background: var(--bg); color: var(--text); overflow-x: hidden; font-size: 13px; }
+    
+    /* Top Header */
+    .header { background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%); color: white; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+    .brand-badge { background: rgba(255, 255, 255, 0.2); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); display: inline-block; }
+    
+    /* Profile & Language Bar */
+    .control-strip { background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
+    .select-input { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 11px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; max-width: 170px; }
+
+    /* Navigation Tabs */
+    .nav-tabs { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; padding: 4px 6px 0 6px; gap: 4px; }
+    .nav-tab { padding: 6px 10px; font-size: 11px; font-weight: 600; color: var(--text-muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+    .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* Tab Content Panels */
+    .panel { padding: 14px; display: none; }
+    .panel.active { display: block; }
+
+    /* UI Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+    .card-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+    .card-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+
+    /* Buttons */
+    .btn-primary { width: 100%; background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px 12px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; font-weight: 600; font-size: 11px; cursor: pointer; margin-top: 6px; }
+    
+    /* Filter Bar */
+    .filter-bar { display: flex; gap: 6px; margin: 8px 0; }
+    .filter-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; font-size: 10.5px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+    .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+    
+    /* Field Card */
+    .field-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+    .field-card.matched { border-left: 4px solid #10b981; }
+    .field-card.unmatched { border-left: 4px solid #94a3b8; }
+    .field-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .field-label { font-weight: 700; font-size: 11.5px; color: var(--text); }
+    .type-badge { font-size: 9.5px; background: #f1f5f9; color: #475569; padding: 2px 5px; border-radius: 4px; font-family: monospace; }
+    .req-badge { font-size: 9px; color: #ef4444; font-weight: 700; margin-left: 4px; }
+    
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: #f8fafc; padding: 6px 8px; border-radius: 6px; border: 1px solid #f1f5f9; }
+    .matched-val-text { font-weight: 700; color: #047857; font-size: 11px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+    .unmatched-text { font-size: 11px; color: #64748b; font-style: italic; }
+    .match-note { font-size: 9.5px; color: #059669; font-weight: 600; display: block; margin-top: 2px; }
+    
+    .btn-action-fill { background: #4338ca; color: white; border: none; border-radius: 6px; padding: 4px 8px; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .btn-action-fill:hover { background: #3730a3; }
+
+    /* Multilingual Explanation Box */
+    .explanation-box { margin-top: 7px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 11px; color: #334155; line-height: 1.4; }
+    .explanation-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-size: 10px; font-weight: 700; color: #4338ca; }
+    .btn-listen { background: none; border: 1px solid #c7d2fe; color: #4338ca; border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; display: flex; align-items: center; gap: 3px; font-weight: 600; }
+    .btn-listen:hover { background: #e0e7ff; }
+
+    /* Preset grid */
+    .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+    .preset-btn { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font-size: 11px; text-align: left; cursor: pointer; }
+    .preset-btn.active { border-color: var(--primary); background: #eef2ff; color: var(--primary); font-weight: 700; }
+
+    /* Field List */
+    .field-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 11px; }
+    .field-key { font-weight: 600; color: var(--text); }
+    .field-val { font-family: monospace; color: var(--primary); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Slider */
+    input[type="range"] { width: 100%; accent-color: var(--primary); margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">
+      <span>✨ FormSaathi AI</span>
+      <span class="brand-badge">Universal</span>
+    </div>
+    <div style="font-size: 11px; display: flex; align-items: center; gap: 5px;">
+      <span class="status-dot"></span>
+      <span>Active in Tab</span>
+    </div>
+  </div>
+
+  <!-- Profile & Language Control Strip -->
+  <div class="control-strip">
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="color: var(--text-muted);">Vault:</span>
+      <select id="profileSelect" class="select-input">
+        <option value="academic">Anitesh Kumar Singh (Academic)</option>
+        <option value="personal">Anitesh Kumar Singh (Personal)</option>
+        <option value="job">Vikram Sharma (Job Applications)</option>
+        <option value="family">Suresh Sharma (Family Welfare)</option>
+      </select>
+    </div>
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <select id="languageSelect" class="select-input">
+        <option value="Hindi">हिन्दी (Hindi)</option>
+        <option value="English">English</option>
+        <option value="Bengali">বাংলা (Bengali)</option>
+        <option value="Marathi">मराठी (Marathi)</option>
+        <option value="Tamil">தமிழ் (Tamil)</option>
+        <option value="Telugu">తెలుగు (Telugu)</option>
+        <option value="Gujarati">ગુજરાતી (Gujarati)</option>
+        <option value="Kannada">ಕನ್ನಡ (Kannada)</option>
+        <option value="Punjabi">ਪੰਜਾਬੀ (Punjabi)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-tab="tab-autofill">⚡ Autofill</button>
+    <button class="nav-tab" data-tab="tab-vault">👤 Vault</button>
+    <button class="nav-tab" data-tab="tab-compress">🗜️ Compress</button>
+    <button class="nav-tab" data-tab="tab-convert">📄 Convert</button>
+    <button class="nav-tab" data-tab="tab-scan">🔍 OCR</button>
+    <button class="nav-tab" data-tab="tab-voice">🎙️ Voice</button>
+  </div>
+
+  <!-- 1. AUTOFILL TAB -->
+  <div id="tab-autofill" class="panel active">
+    <div class="card">
+      <div class="card-title">
+        <span>Active Tab Form Scanner</span>
+        <span id="detectedCountBadge" style="font-size: 10px; background: #ecfdf5; color: #047857; padding: 2px 6px; border-radius: 4px; font-weight: 700;">Scanning...</span>
+      </div>
+
+      <!-- Live Match Overview Stats -->
+      <div style="display: flex; gap: 6px; margin: 8px 0 10px 0; font-size: 11px;">
+        <span id="statTotalBadge" style="background: #eef2ff; color: #4338ca; padding: 3px 8px; border-radius: 6px; font-weight: 700;">0 Total</span>
+        <span id="statMatchedBadge" style="background: #ecfdf5; color: #047857; padding: 3px 8px; border-radius: 6px; font-weight: 700;">🟢 0 Matched</span>
+        <span id="statUnmatchedBadge" style="background: #f1f5f9; color: #64748b; padding: 3px 8px; border-radius: 6px; font-weight: 700;">⚪ 0 Unmatched</span>
+      </div>
+
+      <button id="autofillCurrentTabBtn" class="btn-primary">⚡ Autofill All Matched Fields Now</button>
+      <button id="rescanPageBtn" class="btn-secondary">🔄 Refresh & Re-scan Page Fields</button>
+    </div>
+
+    <!-- Filter chips -->
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all" id="btnFilterAll">All Fields (<span id="filterAllCount">0</span>)</button>
+      <button class="filter-btn" data-filter="matched" id="btnFilterMatched">🟢 Matched (<span id="filterMatchedCount">0</span>)</button>
+      <button class="filter-btn" data-filter="unmatched" id="btnFilterUnmatched">⚪ Unmatched (<span id="filterUnmatchedCount">0</span>)</button>
+    </div>
+
+    <!-- All Form Fields with Matched / Unmatched Data & Explanations -->
+    <div id="detectedFieldsList" style="max-height: 290px; overflow-y: auto;">
+      <div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 20px 0;">Detecting form inputs on current tab...</div>
+    </div>
+  </div>
+
+  <!-- 2. VAULT TAB -->
+  <div id="tab-vault" class="panel">
+    <div class="card">
+      <div class="card-title">
+        <span id="vaultProfileName">Anitesh Kumar Singh (Academic)</span>
+      </div>
+      <div class="card-desc">Saved attributes ready for instant autofilling.</div>
+      <div id="vaultFieldsList" style="max-height: 250px; overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <!-- 3. COMPRESSOR TAB -->
+  <div id="tab-compress" class="panel">
+    <div class="card">
+      <div class="card-title">Portal Document Compressor</div>
+      <div class="card-desc">Shrink certificates and photos to meet strict upload limits.</div>
+      
+      <input type="file" id="compressFileInput" accept="image/*" style="font-size: 11px; margin-bottom: 8px; width: 100%;" />
+
+      <div style="font-size: 11px; font-weight: 700; margin-top: 6px;">Portal Presets:</div>
+      <div class="preset-grid">
+        <button class="preset-btn" data-kb="20">Signature (20 KB)</button>
+        <button class="preset-btn" data-kb="50">Photo / SSC (50 KB)</button>
+        <button class="preset-btn active" data-kb="100">Bonafide / NSP (100 KB)</button>
+        <button class="preset-btn" data-kb="200">Marksheet / CET (200 KB)</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+        <span>Target: <strong id="targetSizeLabel" style="color: var(--primary);">100 KB</strong></span>
+      </div>
+      <input type="range" id="compressSlider" min="15" max="500" step="5" value="100" />
+
+      <button id="runCompressBtn" class="btn-primary" style="margin-top: 6px;">🗜️ Compress Document</button>
+      <div id="compressResultBox" style="display: none; margin-top: 10px; padding: 8px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; font-size: 11px; color: #065f46;"></div>
+    </div>
+  </div>
+
+  <!-- 4. CONVERTER TAB -->
+  <div id="tab-convert" class="panel">
+    <div class="card">
+      <div class="card-title">Universal Format Converter</div>
+      <div class="card-desc">Convert document images or text statements to standard A4 PDF.</div>
+
+      <input type="file" id="convertFileInput" accept="image/*" style="font-size: 11px; margin-bottom: 8px; width: 100%;" />
+      <button id="runImageToPdfBtn" class="btn-primary">📄 Convert Image to Official A4 PDF</button>
+
+      <div style="margin: 12px 0 6px 0; border-top: 1px solid var(--border); padding-top: 8px; font-size: 11px; font-weight: 700;">
+        Self Declaration Statement to PDF:
+      </div>
+      <textarea id="declarationText" rows="3" style="width: 100%; font-size: 11px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;">I hereby declare that all details furnished in this application are true and correct as per my original certificates.</textarea>
+      <button id="runTextToPdfBtn" class="btn-secondary">Generate Declaration PDF</button>
+    </div>
+  </div>
+
+  <!-- 5. SCANNER OCR TAB -->
+  <div id="tab-scan" class="panel">
+    <div class="card">
+      <div class="card-title">Smart Receipt / Form OCR</div>
+      <div class="card-desc">Extract personal details from completed forms or text summaries.</div>
+      <textarea id="ocrTextInput" rows="5" placeholder="Paste application confirmation slip or receipt text here..." style="width: 100%; font-size: 11px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; font-family: monospace;"></textarea>
+      <button id="runOcrScanBtn" class="btn-primary">🔍 Extract & Learn into Vault</button>
+      <div id="ocrResultBox" style="display: none; margin-top: 10px; font-size: 11px;"></div>
+    </div>
+  </div>
+
+  <!-- 6. VOICE TAB -->
+  <div id="tab-voice" class="panel">
+    <div class="card" style="text-align: center; padding: 20px;">
+      <div id="micStatus" style="font-weight: 700; font-size: 13px; color: var(--primary); margin-bottom: 6px;">Tap Mic to Speak in Hindi / English</div>
+      <button id="popupMicBtn" style="width: 60px; height: 60px; border-radius: 50%; background: var(--primary); color: white; border: none; font-size: 24px; cursor: pointer; margin: 10px auto; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(67, 56, 202, 0.3);">🎙️</button>
+      <div id="voiceTranscript" style="font-size: 11px; color: var(--text-muted); min-height: 40px; margin-top: 8px; background: var(--bg); padding: 8px; border-radius: 6px;">Spoken questions or details will appear here...</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

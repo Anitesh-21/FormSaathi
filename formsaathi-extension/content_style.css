@@ -1,0 +1,83 @@
+/* FormSaathi In-Page Floating Assistant Styles */
+#formsaathi-floating-dock {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  font-family: system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #4338ca 0%, #1e1b4b 100%);
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 9999px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  user-select: none;
+}
+#formsaathi-floating-dock:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 15px 30px -5px rgba(67, 56, 202, 0.4);
+}
+.formsaathi-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #10b981;
+}
+.formsaathi-field-badge {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #ffffff;
+  border: 1px solid #c7d2fe;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.85;
+}
+.formsaathi-field-badge:hover {
+  opacity: 1;
+  background: #eef2ff;
+  border-color: #6366f1;
+}
+#formsaathi-inpage-bubble {
+  position: absolute;
+  z-index: 2147483647;
+  max-width: 320px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
+  font-family: system-ui, sans-serif;
+  color: #0f172a;
+  font-size: 12px;
+  animation: formsaathi-fade 0.15s ease-out;
+}
+@keyframes formsaathi-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.formsaathi-autofilled-highlight {
+  animation: formsaathi-green-flash 1.2s ease-out !important;
+  background-color: #ecfdf5 !important;
+  border-color: #10b981 !important;
+}
+@keyframes formsaathi-green-flash {
+  0% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.4); }
+  100% { box-shadow: none; }
+}

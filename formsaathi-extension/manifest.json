@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "FormSaathi AI — Universal Form Automation & Document Assistant",
+  "version": "1.0.0",
+  "description": "Universal Form Automation, Multi-Profile Vaults, Multilingual Voice Guidance, In-Page Field Assistant, and Integrated Document Compressor & Converter.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FormSaathi AI Universal Companion"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "css": ["content_style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "content_style.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

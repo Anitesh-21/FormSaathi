@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SupportedLanguage, ScannedFieldResult } from './types';
+import { UserProfile, SupportedLanguage, ScannedFieldResult, ProfileField } from './types';
 import { DEFAULT_PROFILES } from './data/defaultProfiles';
 import { Header, NavTab } from './components/Header';
 import { AnyFormInspector } from './components/AnyFormInspector';
@@ -154,6 +154,55 @@ export default function App() {
     setActiveTab('compressor');
   };
 
+  // Add or update a field in the active profile (e.g. when user enters a new field in a form)
+  const handleSaveOrUpdateFieldToProfile = (
+    fieldKey: string,
+    fieldLabel: string,
+    value: string,
+    category?: ProfileField['category'],
+    profileId?: string
+  ) => {
+    if (!value || !value.trim()) return;
+    const targetId = profileId || activeProfileId;
+    setProfiles((prev) =>
+      prev.map((p) => {
+        if (p.id !== targetId) return p;
+        const cleanKey = fieldKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanLabel = fieldLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        const existingIndex = p.fields.findIndex((f) => {
+          const k = f.key.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const l = f.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return k === cleanKey || l === cleanLabel || (cleanKey.length > 3 && k === cleanKey);
+        });
+
+        let updatedFields = [...p.fields];
+        if (existingIndex >= 0) {
+          // Update existing field
+          updatedFields[existingIndex] = {
+            ...updatedFields[existingIndex],
+            value: value.trim(),
+          };
+        } else {
+          // Add new field to profile
+          updatedFields.push({
+            id: `field-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            key: fieldKey || fieldLabel.toLowerCase().replace(/[^a-zA-Z0-9]/g, ''),
+            label: fieldLabel,
+            value: value.trim(),
+            category: category || 'Personal',
+          });
+        }
+
+        return {
+          ...p,
+          lastUpdated: new Date().toISOString().split('T')[0],
+          fields: updatedFields,
+        };
+      })
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       {/* Top Header */}
@@ -178,6 +227,7 @@ export default function App() {
             currentLanguage={currentLanguage}
             onOpenVoiceModal={() => setShowVoiceModal(true)}
             onOpenCompressor={() => setActiveTab('compressor')}
+            onSaveOrUpdateFieldToProfile={handleSaveOrUpdateFieldToProfile}
           />
         )}
 
@@ -189,6 +239,7 @@ export default function App() {
             currentLanguage={currentLanguage}
             onOpenVoiceModal={() => setShowVoiceModal(true)}
             onNavigateToCompressorWithFile={handleNavigateToCompressor}
+            onSaveOrUpdateFieldToProfile={handleSaveOrUpdateFieldToProfile}
           />
         )}
 

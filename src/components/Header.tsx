@@ -169,7 +169,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <UserCheck className="w-4 h-4" />
-            <span>Personal Profile Vaults</span>
+            <span className="font-semibold">Profile</span>
             <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100">
               {profiles.length}
             </span>

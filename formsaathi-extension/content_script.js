@@ -2,6 +2,25 @@
 (function () {
   console.log("FormSaathi AI Universal Extension injected on:", window.location.href);
 
+  let activeProfileCache = null;
+  let autoAddDebounceTimers = new WeakMap();
+
+  // Load and cache active profile from storage
+  function refreshActiveProfile(callback) {
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(
+        ["formsaathi_active_profile_data", "formsaathi_active_profile_name", "formsaathi_auto_add", "formsaathi_custom_profiles", "formsaathi_active_profile_key"],
+        (res) => {
+          activeProfileCache = res.formsaathi_active_profile_data || getDefaultProfile();
+          if (callback) callback(res);
+        }
+      );
+    } else {
+      activeProfileCache = getDefaultProfile();
+      if (callback) callback({});
+    }
+  }
+
   // 1. Create floating FormSaathi button on the page
   function injectFloatingDock() {
     if (document.getElementById("formsaathi-floating-dock")) return;
@@ -15,50 +34,14 @@
     `;
 
     dock.addEventListener("click", () => {
-      // Trigger autofill using stored profile
-      chrome.storage.local.get(["formsaathi_active_profile_data", "formsaathi_active_profile_name"], (res) => {
+      refreshActiveProfile((res) => {
         const profile = res.formsaathi_active_profile_data || getDefaultProfile();
-        const profName = res.formsaathi_active_profile_name || "Personal & Academic";
+        const profName = res.formsaathi_active_profile_name || "Profile";
         autofillAllFields(profile, profName);
       });
     });
 
     document.body.appendChild(dock);
-  }
-
-  // 2. Attach helpers to inputs
-  function attachFieldHelpers() {
-    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']), select, textarea");
-    inputs.forEach((input) => {
-      if (input.dataset.formSaathiAttached) return;
-      input.dataset.formSaathiAttached = "true";
-
-      // Relative positioning container check
-      const parent = input.parentElement;
-      if (parent && getComputedStyle(parent).position === "static") {
-        parent.style.position = "relative";
-      }
-
-      // Add small helper button
-      const badge = document.createElement("button");
-      badge.type = "button";
-      badge.className = "formsaathi-field-badge";
-      badge.innerHTML = "✨ Fill";
-      badge.title = "FormSaathi: Explain or Autofill this field";
-
-      badge.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        chrome.storage.local.get(["formsaathi_active_profile_data"], (res) => {
-          const profile = res.formsaathi_active_profile_data || getDefaultProfile();
-          fillSingleField(input, profile);
-        });
-      });
-
-      if (parent) {
-        parent.appendChild(badge);
-      }
-    });
   }
 
   // Fallback profile if storage empty
@@ -87,8 +70,9 @@
     };
   }
 
-  // 3. Intelligent Semantic & Fuzzy Matcher
+  // 2. Intelligent Semantic & Fuzzy Matcher
   function matchFieldSemantic(field, profile) {
+    if (!profile) return null;
     const raw = ((field.label || "") + " " + (field.name || "") + " " + (field.id || "")).toLowerCase().replace(/[^a-z0-9]/g, " ");
 
     // 1. SMART LOCATION COMBINATIONS & DERIVATIONS
@@ -187,6 +171,8 @@
       { key: "graduationYear", matches: ["year of graduation", "graduation year", "year of passing", "passing year"] },
       { key: "passportNumber", matches: ["passport national id number", "passport number", "passport no"] },
       { key: "nationality", matches: ["country of citizenship nationality", "nationality", "citizenship country"] },
+      { key: "bloodGroup", matches: ["blood group", "blood type", "blood"] },
+      { key: "alternateMobile", matches: ["alternate mobile", "alt mobile", "alt phone", "secondary phone"] },
       { key: "fullName", matches: ["full legal name", "full name", "fullname", "candidate name", "applicant name", "taxpayer name", "assessee name", "student name", "legal name", "name as per matriculation", "name as per aadhaar", "name in block letters", "beneficiary name"] },
       { key: "firstName", matches: ["first name", "given name", "forename"] },
       { key: "lastName", matches: ["last name", "surname", "family name"] }
@@ -224,6 +210,183 @@
     return null;
   }
 
+  // 3. Auto-add new form values to active profile when user enters them
+  function handleInputTyping(input) {
+    const inputType = (input.type || "").toLowerCase();
+    // Skip passwords, hidden fields, submit buttons
+    if (inputType === "password" || inputType === "hidden" || inputType === "submit" || inputType === "button" || inputType === "reset") {
+      return;
+    }
+
+    const val = input.value?.trim();
+    if (!val) {
+      updateInputBadge(input, activeProfileCache);
+      return;
+    }
+
+    refreshActiveProfile((res) => {
+      const autoAddEnabled = res.formsaathi_auto_add !== false; // defaults to true
+      const profile = res.formsaathi_active_profile_data || getDefaultProfile();
+      const customProfiles = res.formsaathi_custom_profiles || {};
+      const activeKey = res.formsaathi_active_profile_key || "academic";
+
+      const label = inferSmartFieldLabel(input);
+      const meta = { id: input.id, name: input.name, label };
+      const match = matchFieldSemantic(meta, profile);
+
+      if (!match) {
+        // FIELD IS NOT IN PROFILE
+        if (autoAddEnabled) {
+          const cleanKey = label.replace(/\*$/, "").trim();
+          profile[cleanKey] = val;
+
+          // Save to active profile and custom profiles
+          if (!customProfiles[activeKey]) {
+            customProfiles[activeKey] = { name: res.formsaathi_active_profile_name || "Profile", data: {} };
+          }
+          customProfiles[activeKey].data = { ...customProfiles[activeKey].data, [cleanKey]: val };
+
+          chrome.storage.local.set({
+            formsaathi_active_profile_data: profile,
+            formsaathi_custom_profiles: customProfiles
+          }, () => {
+            activeProfileCache = profile;
+            input.classList.add("formsaathi-autofilled-highlight");
+            showToast(`✨ FormSaathi saved "${cleanKey}: ${val}" to your Profile!`);
+            updateInputBadge(input, profile);
+          });
+        } else {
+          updateInputBadge(input, profile);
+        }
+      } else {
+        updateInputBadge(input, profile);
+      }
+    });
+  }
+
+  // Update in-page helper badge state for an input
+  function updateInputBadge(input, profile) {
+    const badge = input.parentElement?.querySelector(".formsaathi-field-badge");
+    if (!badge) return;
+
+    const label = inferSmartFieldLabel(input);
+    const meta = { id: input.id, name: input.name, label };
+    const match = matchFieldSemantic(meta, profile || activeProfileCache);
+    const currentVal = input.value?.trim();
+
+    badge.className = "formsaathi-field-badge";
+
+    if (!match) {
+      if (currentVal) {
+        badge.innerHTML = "💾 + Profile";
+        badge.title = `Click to save "${label}: ${currentVal}" into your active Profile`;
+        badge.classList.add("formsaathi-field-save-badge");
+      } else {
+        badge.innerHTML = "✨ Learn";
+        badge.title = "FormSaathi: Enter value to save to Profile";
+      }
+    } else {
+      if (currentVal && currentVal !== String(match.value).trim()) {
+        badge.innerHTML = "↺ Update";
+        badge.title = `Update "${match.matchedKey}" from "${match.value}" to "${currentVal}" in Profile`;
+        badge.classList.add("formsaathi-field-update-badge");
+      } else {
+        badge.innerHTML = "✨ Fill";
+        badge.title = `FormSaathi: Fill ${match.matchedKey} (${match.value})`;
+      }
+    }
+  }
+
+  // 4. Attach helpers and event listeners to inputs
+  function attachFieldHelpers() {
+    const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
+    inputs.forEach((input) => {
+      if (input.dataset.formSaathiAttached) return;
+      input.dataset.formSaathiAttached = "true";
+
+      const parent = input.parentElement;
+      if (parent && getComputedStyle(parent).position === "static") {
+        parent.style.position = "relative";
+      }
+
+      // Add small helper button
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "formsaathi-field-badge";
+      badge.innerHTML = "✨ Fill";
+      badge.title = "FormSaathi: Autofill, update, or save to profile";
+
+      badge.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        refreshActiveProfile((res) => {
+          const profile = res.formsaathi_active_profile_data || getDefaultProfile();
+          const customProfiles = res.formsaathi_custom_profiles || {};
+          const activeKey = res.formsaathi_active_profile_key || "academic";
+          const label = inferSmartFieldLabel(input);
+          const meta = { id: input.id, name: input.name, label };
+          const match = matchFieldSemantic(meta, profile);
+          const currentVal = input.value?.trim();
+
+          if (badge.classList.contains("formsaathi-field-save-badge") && currentVal) {
+            // Save new field to profile
+            const cleanKey = label.replace(/\*$/, "").trim();
+            profile[cleanKey] = currentVal;
+            if (!customProfiles[activeKey]) customProfiles[activeKey] = { name: "Profile", data: {} };
+            customProfiles[activeKey].data = { ...customProfiles[activeKey].data, [cleanKey]: currentVal };
+
+            chrome.storage.local.set({
+              formsaathi_active_profile_data: profile,
+              formsaathi_custom_profiles: customProfiles
+            }, () => {
+              activeProfileCache = profile;
+              showToast(`✓ Added "${cleanKey}: ${currentVal}" to Profile!`);
+              updateInputBadge(input, profile);
+            });
+          } else if (badge.classList.contains("formsaathi-field-update-badge") && match && currentVal) {
+            // Update existing field in profile
+            profile[match.matchedKey] = currentVal;
+            if (!customProfiles[activeKey]) customProfiles[activeKey] = { name: "Profile", data: {} };
+            customProfiles[activeKey].data = { ...customProfiles[activeKey].data, [match.matchedKey]: currentVal };
+
+            chrome.storage.local.set({
+              formsaathi_active_profile_data: profile,
+              formsaathi_custom_profiles: customProfiles
+            }, () => {
+              activeProfileCache = profile;
+              showToast(`✓ Updated "${match.matchedKey}" to "${currentVal}" in Profile!`);
+              updateInputBadge(input, profile);
+            });
+          } else {
+            // Fill from profile
+            fillSingleField(input, profile);
+          }
+        });
+      });
+
+      if (parent) {
+        parent.appendChild(badge);
+      }
+
+      // Live listener: when user types or changes value in the form input
+      const handleUserEntry = () => {
+        clearTimeout(autoAddDebounceTimers.get(input));
+        const timer = setTimeout(() => {
+          handleInputTyping(input);
+        }, 650);
+        autoAddDebounceTimers.set(input, timer);
+      };
+
+      input.addEventListener("input", handleUserEntry);
+      input.addEventListener("change", () => handleInputTyping(input));
+      input.addEventListener("blur", () => handleInputTyping(input));
+
+      // Initial badge state setup
+      updateInputBadge(input, activeProfileCache);
+    });
+  }
+
   // Fill single input
   function fillSingleField(input, profile) {
     const label = inferSmartFieldLabel(input);
@@ -233,8 +396,9 @@
       setNativeValue(input, String(match.value));
       input.classList.add("formsaathi-autofilled-highlight");
       showToast("✨ FormSaathi filled " + (match.matchedKey || label) + " = " + match.value);
+      updateInputBadge(input, profile);
     } else {
-      showToast("No direct match found in active vault for this field.");
+      showToast("No direct match found in active profile for this field. Type value to save it!");
     }
   }
 
@@ -251,6 +415,7 @@
         setNativeValue(input, String(match.value));
         input.classList.add("formsaathi-autofilled-highlight");
         count++;
+        updateInputBadge(input, profile);
       }
     });
 
@@ -278,13 +443,13 @@
   function isSamplePlaceholderOrValue(str) {
     if (!str) return true;
     const s = str.trim().toLowerCase();
-    if (s.startsWith("+") || /^\+?\d[\d\s-]{6,}$/.test(s)) return true; // phone format e.g. +91 98765 43210
-    if (s.includes("@") || s.includes(".com") || s.includes(".org") || s.includes(".in") || s.includes(".net")) return true; // email
-    if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("www.")) return true; // url
-    if (/^(e\.?g\.?|ex\.?|for example|sample|such as)\b/i.test(s)) return true; // e.g. Jaipur, e.g. 2021
-    if (/^(yyyy|dd\/mm|mm\/dd|dd-mm|mm-dd)/i.test(s)) return true; // date formats
-    if (/^(enter|type|input|select|choose|search|write|fill|provide|first and last)\b/i.test(s)) return true; // action instructions
-    if (/^\d+(\.\d+)?(\s*(years?|yrs?|lakh|inr|rs\.?|%|kg|mb|kb))?$/i.test(s)) return true; // numbers/measurements
+    if (s.startsWith("+") || /^\+?\d[\d\s-]{6,}$/.test(s)) return true;
+    if (s.includes("@") || s.includes(".com") || s.includes(".org") || s.includes(".in") || s.includes(".net")) return true;
+    if (s.startsWith("http://") || s.startsWith("https://") || s.startsWith("www.")) return true;
+    if (/^(e\.?g\.?|ex\.?|for example|sample|such as)\b/i.test(s)) return true;
+    if (/^(yyyy|dd\/mm|mm\/dd|dd-mm|mm-dd)/i.test(s)) return true;
+    if (/^(enter|type|input|select|choose|search|write|fill|provide|first and last)\b/i.test(s)) return true;
+    if (/^\d+(\.\d+)?(\s*(years?|yrs?|lakh|inr|rs\.?|%|kg|mb|kb))?$/i.test(s)) return true;
     return false;
   }
 
@@ -375,7 +540,6 @@
     let rawLabel = getLabelForInput(el);
 
     if (!rawLabel || isSamplePlaceholderOrValue(rawLabel) || rawLabel === "General Applicant Detail") {
-      // Autocomplete mapping
       const auto = (el.getAttribute("autocomplete") || "").toLowerCase().trim();
       if (auto) {
         if (auto === "name" || auto === "given-name") rawLabel = "Full Name";
@@ -391,7 +555,6 @@
     }
 
     if (!rawLabel || isSamplePlaceholderOrValue(rawLabel) || rawLabel === "General Applicant Detail") {
-      // Semantic resolution from name, id, class, type
       const rawId = el.id || "";
       const rawName = el.name || el.getAttribute("name") || "";
       const rawClass = el.className || "";
@@ -434,28 +597,10 @@
         rawLabel = "Bank IFSC Code";
       } else if (/\b(income|salary)\b/i.test(rawAttrs)) {
         rawLabel = "Annual Family Income";
-      } else if (/\b(vendor|company|business)\b/i.test(rawAttrs)) {
-        rawLabel = "Vendor / Company Name";
-      } else if (/\b(tax|tax_id|reg_no)\b/i.test(rawAttrs)) {
-        rawLabel = "Tax / PAN / Registration ID";
-      } else if (/\b(roll|hall_ticket|prn|registration)\b/i.test(rawAttrs)) {
-        rawLabel = "Roll / Registration Number";
-      } else if (/\b(college|university|institute|campus)\b/i.test(rawAttrs)) {
-        rawLabel = "University / College Name";
-      } else if (/\b(degree|course|qualification)\b/i.test(rawAttrs)) {
-        rawLabel = "Highest Degree Completed";
-      } else if (/\b(experience|years)\b/i.test(rawAttrs)) {
-        rawLabel = "Total Years of Experience";
-      } else if (/\b(designation|role|title)\b/i.test(rawAttrs)) {
-        rawLabel = "Current Title / Designation";
-      } else if (/\b(graduation|passing)\b/i.test(rawAttrs)) {
-        rawLabel = "Year of Graduation";
-      } else if (/\b(passport)\b/i.test(rawAttrs)) {
-        rawLabel = "Passport Number";
-      } else if (/\b(nationality|citizenship)\b/i.test(rawAttrs)) {
-        rawLabel = "Nationality";
-      } else if (/\b(password|pwd)\b/i.test(rawAttrs) || inputType === "password") {
-        rawLabel = "Security Password";
+      } else if (/\b(blood|blood_group|bloodgroup)\b/i.test(rawAttrs)) {
+        rawLabel = "Blood Group";
+      } else if (/\b(alt_phone|alt_mobile|alternate_mobile)\b/i.test(rawAttrs)) {
+        rawLabel = "Alternate Mobile";
       } else {
         const cand = rawName || rawId;
         if (cand && !/^(field|input|txt|val|data|elem)[\s_-]*\d*$/i.test(cand)) {
@@ -484,7 +629,6 @@
 
     rawLabel = (rawLabel || "Application Detail").replace(/[:*]+$/, "").trim();
 
-    // Append required asterisk if element is marked required
     const isRequired = el.required || el.hasAttribute("required") || el.getAttribute("aria-required") === "true" || el.classList.contains("required");
     if (isRequired && !rawLabel.includes("*")) {
       rawLabel = rawLabel + " *";
@@ -498,12 +642,15 @@
     if (!t) {
       t = document.createElement("div");
       t.id = "formsaathi-toast";
-      t.style.cssText = "position:fixed;top:20px;right:20px;z-index:2147483647;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-family:system-ui;box-shadow:0 10px 20px rgba(0,0,0,0.2);transition:all 0.3s;border:1px solid #334155;";
       document.body.appendChild(t);
     }
     t.textContent = msg;
     t.style.opacity = "1";
-    setTimeout(() => { t.style.opacity = "0"; }, 3500);
+    t.style.transform = "translateY(0)";
+    setTimeout(() => {
+      t.style.opacity = "0";
+      t.style.transform = "translateY(-10px)";
+    }, 3500);
   }
 
   // Message listener from popup
@@ -527,7 +674,7 @@
       });
       sendResponse({ status: "success", fields: detected, title: document.title, url: location.href });
     } else if (req.action === "AUTOFILL_PAGE") {
-      autofillAllFields(req.profileData, req.profileName || "Active Profile");
+      autofillAllFields(req.profileData, req.profileName || "Profile");
       sendResponse({ status: "success" });
     } else if (req.action === "AUTOFILL_SINGLE_FIELD") {
       const inputs = document.querySelectorAll("input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='reset']), select, textarea");
@@ -541,6 +688,7 @@
         setNativeValue(target, String(req.value));
         target.classList.add("formsaathi-autofilled-highlight");
         showToast("✨ FormSaathi updated field: " + req.value);
+        updateInputBadge(target, activeProfileCache);
         sendResponse({ status: "success" });
       } else {
         sendResponse({ status: "error", message: "Field not found" });
@@ -550,10 +698,12 @@
   });
 
   // Init
-  setTimeout(() => {
-    injectFloatingDock();
-    attachFieldHelpers();
-  }, 1000);
+  refreshActiveProfile(() => {
+    setTimeout(() => {
+      injectFloatingDock();
+      attachFieldHelpers();
+    }, 800);
+  });
 
   const observer = new MutationObserver(() => {
     attachFieldHelpers();

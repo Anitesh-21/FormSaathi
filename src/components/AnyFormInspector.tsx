@@ -16,6 +16,9 @@ import {
   Plane,
   Receipt,
   RotateCcw,
+  Check,
+  Plus,
+  X,
 } from 'lucide-react';
 import { UserProfile, FormFieldDef, SupportedLanguage } from '../types';
 import { suggestAutofill, explainFormField } from '../services/api';
@@ -25,6 +28,13 @@ interface AnyFormInspectorProps {
   currentLanguage: SupportedLanguage;
   onOpenVoiceModal: () => void;
   onOpenCompressor: () => void;
+  onSaveOrUpdateFieldToProfile?: (
+    fieldKey: string,
+    fieldLabel: string,
+    value: string,
+    category?: any,
+    profileId?: string
+  ) => void;
 }
 
 // Pre-configured custom web form templates that simulate external web forms
@@ -92,6 +102,7 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
   activeProfile,
   currentLanguage,
   onOpenVoiceModal,
+  onSaveOrUpdateFieldToProfile,
 }) => {
   const [activePresetIndex, setActivePresetIndex] = useState(0);
   const [isCustomMode, setIsCustomMode] = useState(false);
@@ -129,12 +140,78 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [autofilledFields, setAutofilledFields] = useState<Record<string, boolean>>({});
 
+  // Auto-add & profile sync state
+  const [autoAddToProfile, setAutoAddToProfile] = useState(true);
+  const [fieldSyncStatus, setFieldSyncStatus] = useState<Record<string, 'added' | 'updated'>>({});
+
   // Active tooltip or helper modal for a single field
   const [activeTooltipFieldId, setActiveTooltipFieldId] = useState<string | null>(null);
   const [tooltipData, setTooltipData] = useState<{ explanation: string; tip: string; example: string } | null>(null);
   const [isLoadingTooltip, setIsLoadingTooltip] = useState(false);
   const [isAutofilling, setIsAutofilling] = useState(false);
   const [autofillToast, setAutofillToast] = useState<string | null>(null);
+
+  // Helper to check if a form field is in active profile
+  const findProfileField = (fieldId: string, fieldLabel: string) => {
+    const cleanId = fieldId.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanLabel = fieldLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return activeProfile.fields.find((f) => {
+      const k = f.key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const l = f.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return k === cleanId || l === cleanLabel || (cleanId.length > 3 && k.includes(cleanId)) || (cleanLabel.length > 3 && l.includes(cleanLabel));
+    });
+  };
+
+  const handleFieldChange = (fieldDef: FormFieldDef, value: string) => {
+    setFieldValues((prev) => ({ ...prev, [fieldDef.id]: value }));
+
+    if (autoAddToProfile && value.trim()) {
+      const existing = findProfileField(fieldDef.id, fieldDef.label);
+      if (!existing && onSaveOrUpdateFieldToProfile) {
+        onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, fieldDef.category as any);
+        setFieldSyncStatus((prev) => ({ ...prev, [fieldDef.id]: 'added' }));
+        setAutofillToast(`✨ Auto-added "${fieldDef.label}" to profile "${activeProfile.name}"!`);
+        setTimeout(() => setAutofillToast(null), 3500);
+      }
+    }
+  };
+
+  const handleExplicitSaveToProfile = (fieldDef: FormFieldDef, value: string) => {
+    if (!value || !value.trim()) return;
+    if (onSaveOrUpdateFieldToProfile) {
+      const existing = findProfileField(fieldDef.id, fieldDef.label);
+      onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, fieldDef.category as any);
+      setFieldSyncStatus((prev) => ({ ...prev, [fieldDef.id]: existing ? 'updated' : 'added' }));
+      setAutofillToast(
+        existing
+          ? `Updated "${fieldDef.label}" in profile "${activeProfile.name}"!`
+          : `Added "${fieldDef.label}" to profile "${activeProfile.name}"!`
+      );
+      setTimeout(() => setAutofillToast(null), 3500);
+    }
+  };
+
+  const handleSyncAllNewFields = () => {
+    let count = 0;
+    currentFields.forEach((f) => {
+      const val = fieldValues[f.id];
+      if (val && val.trim()) {
+        const existing = findProfileField(f.id, f.label);
+        if (!existing && onSaveOrUpdateFieldToProfile) {
+          onSaveOrUpdateFieldToProfile(f.id, f.label, val, f.category as any);
+          setFieldSyncStatus((prev) => ({ ...prev, [f.id]: 'added' }));
+          count++;
+        }
+      }
+    });
+    if (count > 0) {
+      setAutofillToast(`✨ Saved ${count} new field(s) to profile "${activeProfile.name}"!`);
+      setTimeout(() => setAutofillToast(null), 3500);
+    } else {
+      setAutofillToast('All entered fields are already in your profile.');
+      setTimeout(() => setAutofillToast(null), 3000);
+    }
+  };
 
   // Helper to infer intelligent, descriptive labels from elements without ever falling back to generic "Input Field"
   const inferDescriptiveLabel = (raw: string, el?: Element, idx: number = 0) => {
@@ -597,15 +674,38 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
 
         {/* Webpage Content */}
         <div className="p-6 sm:p-8 space-y-6">
-          <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-slate-900">{currentTitle}</h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 {currentFields.length} interactive fields detected by FormSaathi extension.
               </p>
             </div>
-            <div className="text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              Target Profile: <strong className="text-indigo-700">{activeProfile.name}</strong>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                Target Profile: <strong className="text-indigo-700">{activeProfile.name}</strong>
+              </div>
+              <label className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs shadow-2xs">
+                <input
+                  type="checkbox"
+                  checked={autoAddToProfile}
+                  onChange={(e) => setAutoAddToProfile(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                />
+                <span className="text-[11px] font-semibold text-slate-700">
+                  Auto-add new entries to Profile
+                </span>
+              </label>
+              {currentFields.some((f) => fieldValues[f.id]?.trim() && !findProfileField(f.id, f.label)) && (
+                <button
+                  type="button"
+                  onClick={handleSyncAllNewFields}
+                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Save New Fields to Profile</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -617,6 +717,12 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                 const value = fieldValues[field.id] || '';
                 const isInspectingThis = activeTooltipFieldId === field.id;
 
+                const profileMatch = findProfileField(field.id, field.label);
+                const isInProfile = !!profileMatch;
+                const isSyncAdded = fieldSyncStatus[field.id] === 'added';
+                const isSyncUpdated = fieldSyncStatus[field.id] === 'updated';
+                const isProfileValueDifferent = isInProfile && profileMatch.value !== value && value.trim() !== '';
+
                 return (
                   <div
                     key={field.id}
@@ -624,17 +730,63 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                       field.type === 'textarea' || field.id.includes('address') ? 'sm:col-span-2' : ''
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1 flex-wrap">
                       <label htmlFor={field.id} className="text-xs font-semibold text-slate-800 block">
                         {field.label} {field.required && <span className="text-rose-500 font-bold">*</span>}
                       </label>
 
-                      {isAutofilled && (
-                        <span className="text-[10px] text-emerald-700 bg-emerald-50 font-semibold px-1.5 py-0.2 rounded border border-emerald-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                          Autofilled by Extension
-                        </span>
-                      )}
+                      {/* Profile Presence & Sync Badges */}
+                      <div className="flex items-center gap-1.5">
+                        {isAutofilled && (
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 font-semibold px-1.5 py-0.2 rounded border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                            Autofilled
+                          </span>
+                        )}
+
+                        {isSyncAdded ? (
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-semibold border border-emerald-200 flex items-center gap-0.5">
+                            <Check className="w-2.5 h-2.5" />
+                            Added to Profile
+                          </span>
+                        ) : isSyncUpdated ? (
+                          <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-semibold border border-blue-200 flex items-center gap-0.5">
+                            <Check className="w-2.5 h-2.5" />
+                            Updated in Profile
+                          </span>
+                        ) : !isInProfile ? (
+                          value.trim() ? (
+                            <button
+                              type="button"
+                              onClick={() => handleExplicitSaveToProfile(field, value)}
+                              className="text-[10px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold border border-indigo-200 flex items-center gap-1 transition-colors cursor-pointer"
+                              title="Add this new field to active profile"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                              <span>Add to Profile</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded font-medium border border-amber-200">
+                              New field
+                            </span>
+                          )
+                        ) : isProfileValueDifferent ? (
+                          <button
+                            type="button"
+                            onClick={() => handleExplicitSaveToProfile(field, value)}
+                            className="text-[10px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold border border-indigo-200 flex items-center gap-1 transition-colors cursor-pointer"
+                            title={`Update saved value to "${value}"`}
+                          >
+                            <RefreshCw className="w-2.5 h-2.5 text-indigo-600" />
+                            <span>Update Profile</span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                            <Check className="w-2.5 h-2.5 text-emerald-500" />
+                            <span>In Profile</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Input with embedded FormSaathi extension button on the right */}
@@ -646,9 +798,7 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                           aria-label={`${field.label}${field.required ? ' *' : ''}`}
                           data-field-label={`${field.label}${field.required ? ' *' : ''}`}
                           value={value}
-                          onChange={(e) =>
-                            setFieldValues({ ...fieldValues, [field.id]: e.target.value })
-                          }
+                          onChange={(e) => handleFieldChange(field, e.target.value)}
                           className={`w-full text-xs sm:text-sm rounded-lg border px-3 py-2 pr-9 bg-white transition-all focus:outline-hidden ${
                             isAutofilled
                               ? 'border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-200'
@@ -671,9 +821,7 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                           rows={3}
                           value={value}
                           placeholder={field.placeholder}
-                          onChange={(e) =>
-                            setFieldValues({ ...fieldValues, [field.id]: e.target.value })
-                          }
+                          onChange={(e) => handleFieldChange(field, e.target.value)}
                           className={`w-full text-xs sm:text-sm rounded-lg border px-3 py-2 pr-9 bg-white transition-all focus:outline-hidden ${
                             isAutofilled
                               ? 'border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-200'
@@ -689,9 +837,7 @@ export const AnyFormInspector: React.FC<AnyFormInspectorProps> = ({
                           data-field-label={`${field.label}${field.required ? ' *' : ''}`}
                           value={value}
                           placeholder={field.placeholder}
-                          onChange={(e) =>
-                            setFieldValues({ ...fieldValues, [field.id]: e.target.value })
-                          }
+                          onChange={(e) => handleFieldChange(field, e.target.value)}
                           className={`w-full text-xs sm:text-sm rounded-lg border px-3 py-2 pr-9 bg-white transition-all focus:outline-hidden ${
                             isAutofilled
                               ? 'border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-200'

@@ -15,6 +15,9 @@ import {
   FolderPlus,
   Sparkles,
   Calendar,
+  X,
+  Save,
+  CheckCircle2,
 } from 'lucide-react';
 import { UserProfile, ProfileField } from '../types';
 
@@ -25,6 +28,18 @@ interface ProfileManagerProps {
   onUpdateProfiles: (updated: UserProfile[]) => void;
   onOpenScanner: () => void;
 }
+
+const QUICK_ADD_PRESETS = [
+  { label: 'Blood Group', category: 'Personal' as const, placeholder: 'e.g. B+, O+, A+' },
+  { label: 'Alternate Mobile', category: 'Contact & Address' as const, placeholder: 'e.g. 9876543210' },
+  { label: 'Mother Tongue', category: 'Personal' as const, placeholder: 'e.g. Hindi, Bengali, Tamil' },
+  { label: 'Domicile Certificate No', category: 'Identity & Documents' as const, placeholder: 'e.g. DOM/2023/8892' },
+  { label: 'Driving License No', category: 'Identity & Documents' as const, placeholder: 'e.g. RJ14 20210081293' },
+  { label: 'Voter ID (EPIC)', category: 'Identity & Documents' as const, placeholder: 'e.g. ABC1234567' },
+  { label: 'Emergency Contact Person', category: 'Personal' as const, placeholder: 'e.g. Ramesh Singh (Brother - 9876543211)' },
+  { label: 'LinkedIn Profile', category: 'Employment' as const, placeholder: 'https://linkedin.com/in/username' },
+  { label: 'GitHub Profile', category: 'Employment' as const, placeholder: 'https://github.com/username' },
+];
 
 export const ProfileManager: React.FC<ProfileManagerProps> = ({
   profiles,
@@ -40,10 +55,24 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({});
 
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
+
   // Edit / Add Field Modal
   const [editingField, setEditingField] = useState<ProfileField | null>(null);
   const [isNewField, setIsNewField] = useState(false);
   const [showFieldModal, setShowFieldModal] = useState(false);
+
+  // Inline Field Value Editing
+  const [inlineEditFieldId, setInlineEditFieldId] = useState<string | null>(null);
+  const [inlineEditValue, setInlineEditValue] = useState<string>('');
 
   // New Profile Modal
   const [showNewProfileModal, setShowNewProfileModal] = useState(false);
@@ -57,8 +86,8 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
   };
 
   // Delete a field
-  const handleDeleteField = (fieldId: string) => {
-    if (window.confirm('Delete this saved detail from this profile?')) {
+  const handleDeleteField = (fieldId: string, label: string) => {
+    if (window.confirm(`Delete "${label}" from profile "${currentProfile.name}"?`)) {
       const updatedProfiles = profiles.map((p) => {
         if (p.id === currentProfile.id) {
           return {
@@ -70,10 +99,38 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
         return p;
       });
       onUpdateProfiles(updatedProfiles);
+      showToast(`Deleted "${label}" from profile.`);
     }
   };
 
-  // Save edited or new field
+  // Quick Inline Save for Field Value
+  const handleSaveInlineValue = (fieldId: string) => {
+    const targetField = currentProfile.fields.find((f) => f.id === fieldId);
+    if (!targetField) return;
+
+    const trimmedValue = inlineEditValue.trim();
+    if (!trimmedValue) {
+      alert('Value cannot be empty.');
+      return;
+    }
+
+    const updatedProfiles = profiles.map((p) => {
+      if (p.id === currentProfile.id) {
+        return {
+          ...p,
+          lastUpdated: new Date().toISOString().split('T')[0],
+          fields: p.fields.map((f) => (f.id === fieldId ? { ...f, value: trimmedValue } : f)),
+        };
+      }
+      return p;
+    });
+
+    onUpdateProfiles(updatedProfiles);
+    setInlineEditFieldId(null);
+    showToast(`Updated "${targetField.label}" to "${trimmedValue}"!`);
+  };
+
+  // Save edited or new field from modal
   const handleSaveField = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingField || !editingField.label.trim()) return;
@@ -110,7 +167,21 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
 
     onUpdateProfiles(updatedProfiles);
     setShowFieldModal(false);
+    showToast(isNewField ? `Added new field "${fieldToSave.label}"!` : `Updated field "${fieldToSave.label}"!`);
     setEditingField(null);
+  };
+
+  // Open Quick Add Preset in Modal
+  const handleOpenPreset = (preset: typeof QUICK_ADD_PRESETS[0]) => {
+    setIsNewField(true);
+    setEditingField({
+      id: '',
+      key: preset.label.toLowerCase().replace(/[^a-zA-Z0-9]/g, ''),
+      label: preset.label,
+      value: '',
+      category: preset.category,
+    });
+    setShowFieldModal(true);
   };
 
   // Create new profile
@@ -134,12 +205,13 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
     setShowNewProfileModal(false);
     setNewProfileName('');
     setNewProfileDescription('');
+    showToast(`Created new profile "${newProfile.name}"!`);
   };
 
   // Delete Profile
   const handleDeleteProfile = (profileId: string) => {
     if (profiles.length <= 1) {
-      alert('You must have at least one profile vault.');
+      alert('You must have at least one profile.');
       return;
     }
     if (window.confirm('Are you sure you want to delete this profile? All its saved details will be permanently removed.')) {
@@ -148,6 +220,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
       const nextId = updated[0].id;
       setSelectedProfileId(nextId);
       onSelectProfile(nextId);
+      showToast('Profile deleted.');
     }
   };
 
@@ -156,7 +229,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(currentProfile, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `${currentProfile.name.toLowerCase().replace(/\s+/g, '_')}_vault.json`);
+    downloadAnchor.setAttribute('download', `${currentProfile.name.toLowerCase().replace(/\s+/g, '_')}_profile.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -182,7 +255,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
           onUpdateProfiles(updated);
           setSelectedProfileId(newProfile.id);
           onSelectProfile(newProfile.id);
-          alert(`Successfully imported "${newProfile.name}"!`);
+          showToast(`Successfully imported "${newProfile.name}"!`);
         } else {
           alert('Invalid profile JSON format.');
         }
@@ -207,6 +280,19 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold rounded-xl flex items-center justify-between shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-emerald-700 hover:text-emerald-900 font-bold px-1">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top Banner */}
       <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -218,28 +304,46 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
             <span className="text-xs font-medium text-slate-500">Learns only with your permission</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
-            Personal Profile Vaults
+            Profile Manager
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Organize personal details into separate vaults for Academic, Job Applications, Government Schemes, and Family Members.
+            Manage your profiles, add new fields, update values, and keep your verified credentials ready for 1-click form autofill.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
+            onClick={() => {
+              setIsNewField(true);
+              setEditingField({
+                id: '',
+                key: '',
+                label: '',
+                value: '',
+                category: 'Personal',
+              });
+              setShowFieldModal(true);
+            }}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer hover:scale-102"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Field</span>
+          </button>
+
+          <button
             onClick={onOpenScanner}
             className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Scan Form to Add Profile</span>
+            <span>Scan Form / ID</span>
           </button>
 
           <button
             onClick={() => setShowNewProfileModal(true)}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <FolderPlus className="w-3.5 h-3.5" />
-            <span>New Profile Vault</span>
+            <FolderPlus className="w-3.5 h-3.5 text-slate-600" />
+            <span>New Profile</span>
           </button>
         </div>
       </div>
@@ -331,22 +435,48 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
                 });
                 setShowFieldModal(true);
               }}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Custom Detail</span>
+              <span>Add New Field</span>
             </button>
 
             {profiles.length > 1 && (
               <button
                 onClick={() => handleDeleteProfile(currentProfile.id)}
                 className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                title="Delete this profile vault"
+                title="Delete this profile"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
           </div>
+        </div>
+
+        {/* Quick Add Presets Bar */}
+        <div className="px-5 py-3 bg-indigo-50/40 border-b border-indigo-100 flex items-center gap-2 overflow-x-auto scrollbar-none">
+          <span className="text-[11px] font-bold text-indigo-900 whitespace-nowrap flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-indigo-600" />
+            <span>Quick Add Field:</span>
+          </span>
+          {QUICK_ADD_PRESETS.map((preset) => {
+            const alreadyExists = currentProfile.fields.some(
+              (f) => f.label.toLowerCase() === preset.label.toLowerCase()
+            );
+            if (alreadyExists) return null;
+
+            return (
+              <button
+                key={preset.label}
+                onClick={() => handleOpenPreset(preset)}
+                className="px-2.5 py-1 bg-white hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-300 rounded-lg text-[11px] font-medium text-indigo-700 transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer shadow-2xs"
+                title={`Add ${preset.label} (${preset.category})`}
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>{preset.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Filter & Search Bar */}
@@ -382,10 +512,27 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
         {/* Fields Table / Grid */}
         <div className="p-5">
           {filteredFields.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 space-y-2">
+            <div className="py-12 text-center text-slate-400 space-y-3">
               <UserCheck className="w-8 h-8 mx-auto text-slate-300 stroke-[1.5]" />
               <p className="text-xs font-semibold text-slate-600">No saved fields found in this category</p>
-              <p className="text-[11px] text-slate-400">Click "Add Custom Detail" or use "Scan Form" to extract details.</p>
+              <p className="text-[11px] text-slate-400">Click "+ Add New Field" to add any custom attribute to this profile.</p>
+              <button
+                onClick={() => {
+                  setIsNewField(true);
+                  setEditingField({
+                    id: '',
+                    key: '',
+                    label: '',
+                    value: '',
+                    category: selectedCategory !== 'All' ? (selectedCategory as any) : 'Personal',
+                  });
+                  setShowFieldModal(true);
+                }}
+                className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add First Field</span>
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -394,6 +541,8 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
                 const displayValue = isRevealed
                   ? field.value
                   : '•••• •••• ' + field.value.slice(-4);
+
+                const isInlineEditing = inlineEditFieldId === field.id;
 
                 return (
                   <div
@@ -410,53 +559,122 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
                         </h4>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            if (isInlineEditing) {
+                              setInlineEditFieldId(null);
+                            } else {
+                              setInlineEditFieldId(field.id);
+                              setInlineEditValue(field.value);
+                            }
+                          }}
+                          className={`p-1 rounded transition-colors ${
+                            isInlineEditing
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'
+                          }`}
+                          title={isInlineEditing ? 'Cancel Edit' : 'Quick Update Value'}
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+
                         <button
                           onClick={() => {
                             setIsNewField(false);
                             setEditingField(field);
                             setShowFieldModal(true);
                           }}
-                          className="p-1 text-slate-400 hover:text-indigo-600 rounded"
-                          title="Edit"
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                          title="Edit Full Details (Label, Category, Key)"
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          <span className="text-[10px] font-bold px-1 py-0.5 bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 rounded">
+                            Full Edit
+                          </span>
                         </button>
+
                         <button
-                          onClick={() => handleDeleteField(field.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                          title="Delete"
+                          onClick={() => handleDeleteField(field.id, field.label)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                          title="Delete Field"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-100 rounded-lg p-2 text-xs font-mono text-slate-800">
-                      <span className="truncate">{displayValue}</span>
-                      {field.isSensitive && (
-                        <button
-                          onClick={() => toggleSensitive(field.id)}
-                          className="text-slate-400 hover:text-slate-600 flex-shrink-0"
-                          title={isRevealed ? 'Hide sensitive data' : 'Reveal sensitive data'}
-                        >
-                          {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                      )}
-                    </div>
+                    {/* Value Area / Inline Edit */}
+                    {isInlineEditing ? (
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={inlineEditValue}
+                            autoFocus
+                            onChange={(e) => setInlineEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveInlineValue(field.id);
+                              if (e.key === 'Escape') setInlineEditFieldId(null);
+                            }}
+                            className="flex-1 text-xs font-mono p-1.5 rounded border border-indigo-500 bg-indigo-50/30 focus:outline-hidden"
+                            placeholder="Enter new value..."
+                          />
+                          <button
+                            onClick={() => handleSaveInlineValue(field.id)}
+                            className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold"
+                            title="Save Updated Value"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setInlineEditFieldId(null)}
+                            className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-indigo-600 font-medium">Press Enter or click checkmark to update.</p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-100 rounded-lg p-2 text-xs font-mono text-slate-800">
+                        <span className="truncate" title={field.value}>{displayValue}</span>
+                        {field.isSensitive && (
+                          <button
+                            onClick={() => toggleSensitive(field.id)}
+                            className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+                            title={isRevealed ? 'Hide sensitive data' : 'Reveal sensitive data'}
+                          >
+                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
-                    <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1">
                       <span className="font-mono">key: {field.key}</span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(field.value);
-                          alert(`Copied "${field.label}" to clipboard!`);
-                        }}
-                        className="hover:text-indigo-600 flex items-center gap-0.5"
-                      >
-                        <Copy className="w-2.5 h-2.5" />
-                        <span>Copy</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setInlineEditFieldId(field.id);
+                            setInlineEditValue(field.value);
+                          }}
+                          className="hover:text-indigo-600 font-semibold"
+                        >
+                          Update Value
+                        </button>
+                        <span>•</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(field.value);
+                            showToast(`Copied "${field.label}" to clipboard!`);
+                          }}
+                          className="hover:text-indigo-600 flex items-center gap-0.5"
+                        >
+                          <Copy className="w-2.5 h-2.5" />
+                          <span>Copy</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -469,56 +687,86 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
       {/* Edit / Add Field Modal */}
       {showFieldModal && editingField && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200">
-            <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100">
-              {isNewField ? 'Add Custom Detail to Profile' : 'Edit Saved Detail'}
-            </h3>
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                {isNewField ? <Plus className="w-4 h-4 text-indigo-600" /> : <Edit2 className="w-4 h-4 text-indigo-600" />}
+                <span>{isNewField ? 'Add New Field to Profile' : 'Update Profile Field'}</span>
+              </h3>
+              <button
+                onClick={() => setShowFieldModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg px-1 font-bold"
+              >
+                ×
+              </button>
+            </div>
 
             <form onSubmit={handleSaveField} className="mt-4 space-y-3 text-xs">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Detail Label / Question
+                  Field Label / Title <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. 10th Board Certificate Number"
+                  placeholder="e.g. 10th Board Certificate Number, Blood Group, Domicile State"
                   value={editingField.label}
-                  onChange={(e) => setEditingField({ ...editingField, label: e.target.value })}
+                  onChange={(e) => {
+                    const label = e.target.value;
+                    const autoKey = isNewField && !editingField.key
+                      ? label.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')
+                      : editingField.key;
+                    setEditingField({ ...editingField, label, key: autoKey });
+                  }}
                   className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-hidden focus:border-indigo-600"
                 />
               </div>
 
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Normalized Value
+                  Field Value <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. CBSE/2020/098124"
+                  placeholder="e.g. CBSE/2020/098124, B+, Rajasthan"
                   value={editingField.value}
                   onChange={(e) => setEditingField({ ...editingField, value: e.target.value })}
                   className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-hidden focus:border-indigo-600"
                 />
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  Category
-                </label>
-                <select
-                  value={editingField.category}
-                  onChange={(e) => setEditingField({ ...editingField, category: e.target.value as any })}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-hidden focus:border-indigo-600 bg-white"
-                >
-                  <option value="Personal">Personal</option>
-                  <option value="Academic">Academic</option>
-                  <option value="Contact & Address">Contact & Address</option>
-                  <option value="Identity & Documents">Identity & Documents</option>
-                  <option value="Financial & Bank">Financial & Bank</option>
-                  <option value="Employment">Employment</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={editingField.category}
+                    onChange={(e) => setEditingField({ ...editingField, category: e.target.value as any })}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-hidden focus:border-indigo-600 bg-white"
+                  >
+                    <option value="Personal">Personal</option>
+                    <option value="Academic">Academic</option>
+                    <option value="Contact & Address">Contact & Address</option>
+                    <option value="Identity & Documents">Identity & Documents</option>
+                    <option value="Financial & Bank">Financial & Bank</option>
+                    <option value="Employment">Employment</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Internal Key
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. bloodGroup"
+                    value={editingField.key}
+                    onChange={(e) => setEditingField({ ...editingField, key: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-mono focus:outline-hidden focus:border-indigo-600"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
@@ -544,9 +792,10 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5"
                 >
-                  Save Detail
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isNewField ? 'Add Field to Profile' : 'Update Field'}</span>
                 </button>
               </div>
             </form>
@@ -560,7 +809,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200">
             <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100 flex items-center gap-2">
               <FolderPlus className="w-4 h-4 text-indigo-600" />
-              <span>Create New Profile Vault</span>
+              <span>Create New Profile</span>
             </h3>
 
             <form onSubmit={handleCreateProfile} className="mt-4 space-y-3 text-xs">
@@ -587,7 +836,7 @@ export const ProfileManager: React.FC<ProfileManagerProps> = ({
                   onChange={(e) => setNewProfileCategory(e.target.value as any)}
                   className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-hidden focus:border-indigo-600 bg-white"
                 >
-                  <option value="Personal">Personal Vault</option>
+                  <option value="Personal">Personal Profile</option>
                   <option value="Academic">Academic & Scholarships</option>
                   <option value="Job Application">Job Application</option>
                   <option value="Family Member">Family Member</option>

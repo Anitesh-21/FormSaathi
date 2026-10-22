@@ -11,6 +11,11 @@ import {
   ShieldAlert,
   FileCheck,
   Minimize2,
+  Check,
+  Plus,
+  RefreshCw,
+  X,
+  UserCheck,
 } from 'lucide-react';
 import { FormTemplate, FormFieldDef, UserProfile, SupportedLanguage } from '../types';
 import { SAMPLE_FORMS } from '../data/sampleForms';
@@ -24,6 +29,13 @@ interface FormPlaygroundProps {
   currentLanguage: SupportedLanguage;
   onOpenVoiceModal: () => void;
   onNavigateToCompressorWithFile?: (file: File, targetKb: number) => void;
+  onSaveOrUpdateFieldToProfile?: (
+    fieldKey: string,
+    fieldLabel: string,
+    value: string,
+    category?: any,
+    profileId?: string
+  ) => void;
 }
 
 export const FormPlayground: React.FC<FormPlaygroundProps> = ({
@@ -33,6 +45,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
   currentLanguage,
   onOpenVoiceModal,
   onNavigateToCompressorWithFile,
+  onSaveOrUpdateFieldToProfile,
 }) => {
   const [selectedFormId, setSelectedFormId] = useState<string>(SAMPLE_FORMS[0].id);
   const activeForm: FormTemplate = SAMPLE_FORMS.find((f) => f.id === selectedFormId) || SAMPLE_FORMS[0];
@@ -41,6 +54,11 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [autofilledFields, setAutofilledFields] = useState<Record<string, string>>({}); // fieldId -> sourceProfileName
   const [focusedField, setFocusedField] = useState<FormFieldDef | null>(null);
+
+  // Auto-add feature state
+  const [autoAddToProfile, setAutoAddToProfile] = useState<boolean>(true);
+  const [fieldSyncStatus, setFieldSyncStatus] = useState<Record<string, 'added' | 'updated'>>({});
+  const [syncToast, setSyncToast] = useState<string | null>(null);
 
   // File uploads tracking
   const [fileUploads, setFileUploads] = useState<Record<string, { file: File; sizeKb: number; isOverLimit: boolean }>>({});
@@ -53,8 +71,25 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
   const [pendingFormId, setPendingFormId] = useState<string | null>(null);
 
+  const showSyncFeedback = (msg: string) => {
+    setSyncToast(msg);
+    setTimeout(() => {
+      setSyncToast(null);
+    }, 3500);
+  };
+
+  // Helper to determine if a form field matches an existing entry in the active profile
+  const findProfileField = (fieldId: string, fieldLabel: string) => {
+    const cleanId = fieldId.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanLabel = fieldLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return activeProfile.fields.find((f) => {
+      const k = f.key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const l = f.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return k === cleanId || l === cleanLabel || (cleanId.length > 3 && k.includes(cleanId)) || (cleanLabel.length > 3 && l.includes(cleanLabel));
+    });
+  };
+
   const handleFormTabChange = (formId: string) => {
-    // Prompt user to verify or choose profile for this specific form type
     setPendingFormId(formId);
     setShowProfilePrompt(true);
   };
@@ -70,10 +105,58 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
     setFocusedField(null);
     setShowProfilePrompt(false);
     setPendingFormId(null);
+    setFieldSyncStatus({});
   };
 
-  const handleFieldValueChange = (fieldId: string, value: string) => {
-    setFormValues((prev) => ({ ...prev, [fieldId]: value }));
+  const handleFieldValueChange = (fieldDef: FormFieldDef, value: string) => {
+    setFormValues((prev) => ({ ...prev, [fieldDef.id]: value }));
+
+    // Auto-add feature: if field is not present in profile and value is entered, add it to profile!
+    if (autoAddToProfile && value.trim()) {
+      const existing = findProfileField(fieldDef.id, fieldDef.label);
+      if (!existing && onSaveOrUpdateFieldToProfile) {
+        onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, fieldDef.category as any);
+        setFieldSyncStatus((prev) => ({ ...prev, [fieldDef.id]: 'added' }));
+        showSyncFeedback(`✨ Auto-added "${fieldDef.label}" to profile "${activeProfile.name}"!`);
+      }
+    }
+  };
+
+  // Explicit single field save/update to profile
+  const handleExplicitSaveToProfile = (fieldDef: FormFieldDef, value: string) => {
+    if (!value || !value.trim()) return;
+    if (onSaveOrUpdateFieldToProfile) {
+      const existing = findProfileField(fieldDef.id, fieldDef.label);
+      onSaveOrUpdateFieldToProfile(fieldDef.id, fieldDef.label, value, fieldDef.category as any);
+      setFieldSyncStatus((prev) => ({ ...prev, [fieldDef.id]: existing ? 'updated' : 'added' }));
+      showSyncFeedback(
+        existing
+          ? `Updated "${fieldDef.label}" in profile "${activeProfile.name}"!`
+          : `Added new field "${fieldDef.label}" to profile "${activeProfile.name}"!`
+      );
+    }
+  };
+
+  // Sync all currently filled fields that aren't in profile yet
+  const handleSyncAllNewFields = () => {
+    let addedCount = 0;
+    activeForm.fields.forEach((f) => {
+      const val = formValues[f.id];
+      if (val && val.trim()) {
+        const existing = findProfileField(f.id, f.label);
+        if (!existing && onSaveOrUpdateFieldToProfile) {
+          onSaveOrUpdateFieldToProfile(f.id, f.label, val, f.category as any);
+          setFieldSyncStatus((prev) => ({ ...prev, [f.id]: 'added' }));
+          addedCount++;
+        }
+      }
+    });
+
+    if (addedCount > 0) {
+      showSyncFeedback(`✨ Saved ${addedCount} new form field(s) to profile "${activeProfile.name}"!`);
+    } else {
+      showSyncFeedback('All filled fields are already present in your profile.');
+    }
   };
 
   const handleApplyAutofill = (approvedMatches: Record<string, string>) => {
@@ -100,7 +183,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
         isOverLimit,
       },
     }));
-    handleFieldValueChange(field.id, file.name);
+    handleFieldValueChange(field, file.name);
   };
 
   const handleResetForm = () => {
@@ -109,6 +192,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
       setAutofilledFields({});
       setFileUploads({});
       setFocusedField(null);
+      setFieldSyncStatus({});
     }
   };
 
@@ -120,8 +204,27 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
   const completedRequired = activeForm.fields.filter((f) => f.required && formValues[f.id]?.trim()).length;
   const completionPercent = Math.round((completedRequired / (totalRequired || 1)) * 100);
 
+  // Count unmapped filled fields
+  const unmappedFilledCount = activeForm.fields.filter((f) => {
+    const val = formValues[f.id];
+    return val && val.trim() && !findProfileField(f.id, f.label);
+  }).length;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Dynamic Sync Toast */}
+      {syncToast && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-semibold rounded-xl flex items-center justify-between shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{syncToast}</span>
+          </div>
+          <button onClick={() => setSyncToast(null)} className="text-emerald-700 hover:text-emerald-900">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Portal Header & Template Bar */}
       <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -180,24 +283,50 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Form Canvas (8 cols on desktop) */}
         <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-          {/* Active Profile Info Banner */}
+          {/* Active Profile Info Banner & Auto-sync Controls */}
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-700">Active Profile in Use:</span>
+              <span className="font-semibold text-slate-700">Active Profile:</span>
               <span className="px-2.5 py-1 rounded-md bg-indigo-100/80 text-indigo-900 font-bold border border-indigo-200">
                 {activeProfile.name}
               </span>
-              <span className="text-slate-400">({activeProfile.category})</span>
+              <button
+                onClick={() => {
+                  setPendingFormId(selectedFormId);
+                  setShowProfilePrompt(true);
+                }}
+                className="text-indigo-600 hover:text-indigo-800 underline underline-offset-2 ml-1"
+              >
+                Switch
+              </button>
             </div>
-            <button
-              onClick={() => {
-                setPendingFormId(selectedFormId);
-                setShowProfilePrompt(true);
-              }}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
-            >
-              Change Profile for this Form
-            </button>
+
+            {/* Profile Auto-Sync Toggle & Batch Save */}
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                <input
+                  type="checkbox"
+                  checked={autoAddToProfile}
+                  onChange={(e) => setAutoAddToProfile(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                />
+                <span className="text-[11px] font-semibold text-slate-700">
+                  Auto-add new entries to Profile
+                </span>
+              </label>
+
+              {unmappedFilledCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSyncAllNewFields}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                  title="Save new values to active profile"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Save {unmappedFilledCount} New to Profile</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <form onSubmit={(e) => e.preventDefault()} className="p-6 space-y-8">
@@ -219,6 +348,12 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
                       const isFocused = focusedField?.id === field.id;
                       const fileInfo = fileUploads[field.id];
 
+                      const profileMatch = findProfileField(field.id, field.label);
+                      const isInProfile = !!profileMatch;
+                      const isSyncAdded = fieldSyncStatus[field.id] === 'added';
+                      const isSyncUpdated = fieldSyncStatus[field.id] === 'updated';
+                      const isProfileValueDifferent = isInProfile && profileMatch.value !== currentValue && currentValue.trim() !== '';
+
                       return (
                         <div
                           key={field.id}
@@ -226,7 +361,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
                             field.type === 'textarea' || field.id.includes('address') ? 'sm:col-span-2' : ''
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-1 flex-wrap">
                             <label
                               htmlFor={field.id}
                               className={`text-xs font-semibold block transition-colors ${
@@ -237,12 +372,58 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
                               {field.required && <span className="text-rose-500">*</span>}
                             </label>
 
-                            {isFilledByAI && (
-                              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium border border-emerald-200 flex items-center gap-1">
-                                <Sparkles className="w-2.5 h-2.5" />
-                                FormSaathi Autofilled
-                              </span>
-                            )}
+                            {/* Status & Sync to Profile badges */}
+                            <div className="flex items-center gap-1.5">
+                              {isFilledByAI && (
+                                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium border border-emerald-200 flex items-center gap-1">
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  Autofilled
+                                </span>
+                              )}
+
+                              {isSyncAdded ? (
+                                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-semibold border border-emerald-200 flex items-center gap-0.5">
+                                  <Check className="w-2.5 h-2.5" />
+                                  Added to Profile
+                                </span>
+                              ) : isSyncUpdated ? (
+                                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-semibold border border-blue-200 flex items-center gap-0.5">
+                                  <Check className="w-2.5 h-2.5" />
+                                  Updated in Profile
+                                </span>
+                              ) : !isInProfile ? (
+                                currentValue.trim() ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExplicitSaveToProfile(field, currentValue)}
+                                    className="text-[10px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold border border-indigo-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Add this new field to your active profile"
+                                  >
+                                    <Plus className="w-2.5 h-2.5" />
+                                    <span>Add to Profile</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded font-medium border border-amber-200">
+                                    New field
+                                  </span>
+                                )
+                              ) : isProfileValueDifferent ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleExplicitSaveToProfile(field, currentValue)}
+                                  className="text-[10px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold border border-indigo-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                  title={`Update saved value from "${profileMatch.value}" to "${currentValue}"`}
+                                >
+                                  <RefreshCw className="w-2.5 h-2.5 text-indigo-600" />
+                                  <span>Update Profile</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 flex items-center gap-0.5" title="Present in profile">
+                                  <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                  <span>In Profile</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Field Input Render */}
@@ -251,7 +432,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
                               id={field.id}
                               value={currentValue}
                               onFocus={() => setFocusedField(field)}
-                              onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
+                              onChange={(e) => handleFieldValueChange(field, e.target.value)}
                               className={`w-full text-xs sm:text-sm rounded-lg border px-3 py-2 bg-white transition-all focus:outline-hidden ${
                                 isFocused
                                   ? 'border-indigo-600 ring-2 ring-indigo-100'
@@ -274,7 +455,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
                               value={currentValue}
                               placeholder={field.placeholder}
                               onFocus={() => setFocusedField(field)}
-                              onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
+                              onChange={(e) => handleFieldValueChange(field, e.target.value)}
                               className={`w-full text-xs sm:text-sm rounded-lg border px-3 py-2 bg-white transition-all focus:outline-hidden ${
                                 isFocused
                                   ? 'border-indigo-600 ring-2 ring-indigo-100'
@@ -353,7 +534,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
                               value={currentValue}
                               placeholder={field.placeholder}
                               onFocus={() => setFocusedField(field)}
-                              onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
+                              onChange={(e) => handleFieldValueChange(field, e.target.value)}
                               className={`w-full text-xs sm:text-sm rounded-lg border px-3 py-2 bg-white transition-all focus:outline-hidden ${
                                 isFocused
                                   ? 'border-indigo-600 ring-2 ring-indigo-100'
@@ -437,7 +618,7 @@ export const FormPlayground: React.FC<FormPlaygroundProps> = ({
               </div>
               <div>
                 <h3 className="font-bold text-base text-slate-900">
-                  Select Profile Vault for this Application
+                  Select Profile for this Application
                 </h3>
                 <p className="text-xs text-slate-500">
                   Prevents accidental mixing of personal, academic, or family records.
